@@ -634,7 +634,7 @@ class Manager:
                          agent_command=self.resolve_cli(CLI_COMMAND[provider]),
                          agent_args=clean_model_args(r.get('agent_args', []) if r.get('runtime') == runtime else
                                      ['agent', 'stdio'] if provider == 'grok' else []),
-                         mcp_command='buzz-dev-mcp' if provider == 'codex' else '')
+                         mcp_command='buzz-dev-mcp' if provider in ('codex', 'ollama') else '')
                 # Remove stale, provider-specific model pins; preserve other user environment.
                 env = r.get('env_vars')
                 if isinstance(env, dict):
@@ -855,7 +855,15 @@ class Manager:
         env = self.auth_env(a, env)
         effort = env.get('BUZZ_ACP_EFFORT_LEVEL', '')
         if provider == 'ollama':
-            model = env.get('BUZZ_ACP_MODEL', '')
+            model = env.get('BUZZ_ACP_MODEL', '').strip()
+            if not model:
+                record = next((r for r in read_json(self.store, []) if r.get('pubkey') == slug[6:]), None)
+                model = (record or {}).get('model', '').strip()
+            if not model:
+                raise ValueError('Ollama 모델이 지정되지 않았습니다. 모델을 선택하고 저장하세요.')
+            env['BUZZ_ACP_MODEL'] = model
+            env['BUZZ_ACP_MCP_COMMAND'] = env.get('BUZZ_ACP_MCP_COMMAND') or '/Applications/Buzz.app/Contents/MacOS/buzz-dev-mcp'
+            env['ENABLE_TOOL_SEARCH'] = 'false'
             for key in ('ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL', 'ANTHROPIC_DEFAULT_FABLE_MODEL'):
                 env[key] = model
         elif provider == 'codex':
