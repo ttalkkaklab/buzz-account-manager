@@ -33,7 +33,7 @@ The downloadable build targets **Apple Silicon, macOS 14 or later**. You also ne
 1. Download the ZIP from [Releases](https://github.com/ttalkkaklab/buzz-account-manager/releases/latest).
 2. Unzip it and move **Buzz Account Manager.app** into `~/Applications` (create this folder if needed).
 3. Open the app. Select **Subscription accounts → Add account**, then sign in.
-4. Select an agent, choose its account, model, and effort, then click **Save and restart Buzz**.
+4. Select an agent, choose its account, model, and effort, then click **Save settings**.
 
 The build is ad-hoc signed and **not Apple-notarized**. If macOS blocks it, review the app in System Settings → Privacy & Security, or build from source. No subscription credentials are included in the download.
 
@@ -45,7 +45,7 @@ The monitor runs every five minutes while your macOS user is logged in and the M
 
 The old account moves into the selected fallback slot. Recovery of its quota alone does not switch it back. Model and effort stay unchanged; the new account must still have access to that model.
 
-**Saving agent settings or automatically switching accounts restarts Buzz. This can interrupt responses from all agents. Interrupted requests are not replayed.**
+**Settings are saved immediately. Saving agent settings or automatically switching accounts quits Buzz if it is running. Start Buzz manually to use the saved settings. Quitting can interrupt responses from all agents. Interrupted requests are not replayed.**
 
 ## Local data and credentials
 

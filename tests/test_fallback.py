@@ -110,7 +110,7 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(before, path.read_bytes())
         self.assertIn('완료하지 못했습니다', state['events'][0])
 
-    def test_running_buzz_restarts_once(self):
+    def test_running_buzz_stops_once_without_starting(self):
         self.configure()
         other = self.request(); other['agent_id'] = 'b' * 64
         other.update(fallback_ids=[self.spare['id']], auto_fallback=True)
@@ -119,8 +119,32 @@ class FallbackTests(unittest.TestCase):
             run.return_value.returncode = 0
             state = self.manager.monitor()
         self.assertEqual(len(state['events']), 2)
-        self.assertEqual(run.call_count, 2)
-        self.assertEqual(run.call_args.args[0][0], '/usr/bin/open')
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][0], '/usr/bin/osascript')
+
+    def test_stopped_buzz_is_never_started(self):
+        path = self.configure()
+        with patch.object(self.manager, 'usage', side_effect=lambda aid: self.quota(0 if aid == 'default-codex' else 90)), patch.object(self.manager, 'buzz_running', return_value=False), patch.object(b.subprocess, 'run') as run:
+            self.manager.monitor()
+        self.assertEqual(b.read_json(path)['account_ids']['codex'], self.spare['id'])
+        run.assert_not_called()
+
+    def test_write_failure_after_shutdown_never_starts_buzz(self):
+        path = self.configure(); before = path.read_bytes()
+        original = b.atomic_bytes
+        failed = False
+        def fail_once(target, data, mode=0o600):
+            nonlocal failed
+            if target == path and not failed:
+                failed = True
+                raise OSError('test')
+            return original(target, data, mode)
+        with patch.object(self.manager, 'usage', side_effect=lambda aid: self.quota(0 if aid == 'default-codex' else 90)), patch.object(self.manager, 'buzz_running', side_effect=[True, False]), patch.object(b.subprocess, 'run') as run, patch.object(b, 'atomic_bytes', side_effect=fail_once):
+            state = self.manager.monitor()
+        self.assertEqual(path.read_bytes(), before)
+        self.assertIn('완료하지 못했습니다', state['events'][0])
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][0], '/usr/bin/osascript')
 
     def test_stale_editor_cannot_override_switch(self):
         self.configure()

@@ -26,8 +26,8 @@ cat > "$BUILD/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Buzz 계정 관리</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>1.4.1</string>
-<key>CFBundleVersion</key><string>7</string>
+<key>CFBundleShortVersionString</key><string>1.4.2</string>
+<key>CFBundleVersion</key><string>8</string>
 <key>CFBundleDevelopmentRegion</key><string>en</string>
 <key>CFBundleLocalizations</key><array><string>ko</string><string>en</string><string>vi</string></array>
 <key>LSMinimumSystemVersion</key><string>14.0</string>

@@ -829,11 +829,6 @@ class Manager:
                         raise
             except Exception:
                 state['events'] = ['자동 전환을 완료하지 못했습니다. Buzz 상태와 설정을 확인하세요.']
-            finally:
-                if running and (stopped or not self.buzz_running()):
-                    result = subprocess.run(['/usr/bin/open', '-g', '/Applications/Buzz.app'], capture_output=True)
-                    if result.returncode:
-                        state['events'].append('Buzz를 직접 다시 실행하세요.')
             previous = read_json(self.root / 'monitor-state.json', {})
             state['last_events'] = state['events'] or previous.get('last_events', [])
             write_json(self.root / 'monitor-state.json', state)

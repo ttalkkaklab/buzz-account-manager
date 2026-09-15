@@ -271,22 +271,9 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
     func sendLoginInput(_ text: String) {
         loginInput?.fileHandleForWriting.write(Data((text + "\n").utf8))
     }
-    func openBuzz() async throws {
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = false
-        configuration.environment = ["PATH": NSHomeDirectory() + "/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"]
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/Applications/Buzz.app"), configuration: configuration) { _, error in
-                if let error = error { continuation.resume(throwing: error) }
-                else { continuation.resume(returning: ()) }
-            }
-        }
-    }
     func apply(agent: Agent, account: String, provider: String, model: String, effort: String, revision: String, fallbackIDs: [String], autoFallback: Bool) async {
         busy = true
         message = L("로그인과 모델 설정을 확인하는 중…")
-        var stoppedBuzz = false
-        var saved = false
         do {
             let payload = ["agent_id": agent.id, "account_id": account, "provider": provider,
                            "model": model, "effort": effort, "revision": revision,
@@ -302,19 +289,14 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
                     try await Task.sleep(nanoseconds: 100_000_000)
                 }
                 guard running.allSatisfy({ $0.isTerminated }) else { throw AppFailure(message: L("Buzz가 아직 종료되지 않았습니다. 설정은 변경하지 않았습니다.")) }
-                stoppedBuzz = true
             }
             message = L("설정을 백업하고 저장하는 중…")
             _ = try await callBackend("apply", payload: payload)
-            saved = true
-            message = L("Buzz를 다시 실행하는 중…")
-            try await openBuzz()
-            message = L("{0}에 적용했습니다. Buzz를 다시 실행했습니다.", String(describing: agent.name))
+            message = L("{0} 설정을 저장했습니다. Buzz는 직접 시작하세요.", String(describing: agent.name))
             await refresh()
         } catch {
-            self.error = (saved ? L("설정은 저장했지만 Buzz를 다시 열지 못했습니다. ") : "") + error.localizedDescription
+            self.error = error.localizedDescription
             message = ""
-            if stoppedBuzz && !saved { try? await openBuzz() }
         }
         busy = false
     }
@@ -524,7 +506,7 @@ struct AgentEditor: View {
                             Toggle(L("한도 소진 시 예비 계정으로 자동 전환"), isOn: $autoFallback)
                             Text(L("5분마다 잔량을 조회하고 위 순서대로 전환합니다. 모델과 effort는 유지합니다. 조회 실패 시에는 전환하지 않습니다."))
                                 .font(.caption).foregroundStyle(.secondary)
-                            Text(L("앱을 닫아도 로그인한 Mac에서 동작합니다. 전환할 때 Buzz를 다시 실행하므로 모든 에이전트의 응답이 중단될 수 있습니다."))
+                            Text(L("앱을 닫아도 로그인한 Mac에서 동작합니다. 계정을 전환하면 실행 중인 Buzz를 종료합니다. Buzz는 직접 시작하세요."))
                                 .font(.caption).foregroundStyle(.orange)
                             if let checked = snapshot.monitor?.checked_at, let date = usageDate(checked) {
                                 Text(L("자동 조회: {0}", String(describing: displayDate(date, timeOnly: true)))).font(.caption).foregroundStyle(.secondary)
@@ -569,8 +551,8 @@ struct AgentEditor: View {
                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.06)))
                 HStack(alignment: .center, spacing: 20) {
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(L("적용하면 Buzz를 다시 실행합니다.")).font(.callout).fontWeight(.medium)
-                        Text(L("실행 중인 모든 에이전트의 응답이 중단될 수 있습니다.")).font(.caption).foregroundStyle(.secondary)
+                        Text(L("설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.")).font(.callout).fontWeight(.medium)
+                        Text(L("실행 중인 Buzz는 종료되며 모든 에이전트의 응답이 중단될 수 있습니다.")).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button {
@@ -578,7 +560,7 @@ struct AgentEditor: View {
                     } label: {
                         HStack(spacing: 8) {
                             if app.busy { ProgressView().controlSize(.small) }
-                            Text(L("저장하고 Buzz 재시작"))
+                            Text(L("설정 저장"))
                         }
                     }.buttonStyle(.borderedProminent).tint(.teal).controlSize(.large)
                         .disabled(app.busy || account?.ready != true || model.trimmingCharacters(in: .whitespaces).isEmpty)

@@ -51,10 +51,6 @@
     "en": "Restarting Buzz…",
     "vi": "Đang khởi động lại Buzz…"
   },
-  "{0}에 적용했습니다. Buzz를 다시 실행했습니다.": {
-    "en": "Applied to {0}. Buzz has restarted.",
-    "vi": "Đã áp dụng cho {0}. Buzz đã khởi động lại."
-  },
   "설정은 저장했지만 Buzz를 다시 열지 못했습니다. ": {
     "en": "Settings saved, but Buzz could not reopen. ",
     "vi": "Đã lưu cài đặt nhưng không thể mở lại Buzz. "
@@ -191,10 +187,6 @@
     "en": "Checks usage every 5 minutes and switches in the order above. Model and effort stay the same. Failed checks do not trigger a switch.",
     "vi": "Kiểm tra mỗi 5 phút và chuyển theo thứ tự trên. Giữ nguyên mô hình và mức suy luận. Không chuyển nếu kiểm tra thất bại."
   },
-  "앱을 닫아도 로그인한 Mac에서 동작합니다. 전환할 때 Buzz를 다시 실행하므로 모든 에이전트의 응답이 중단될 수 있습니다.": {
-    "en": "Runs while you are logged into this Mac, even when this app is closed. Switching restarts Buzz and may interrupt all agents’ responses.",
-    "vi": "Hoạt động khi bạn đăng nhập vào máy Mac này, kể cả khi đóng ứng dụng. Việc chuyển tài khoản khởi động lại Buzz và có thể ngắt phản hồi của mọi tác nhân."
-  },
   "자동 조회: {0}": {
     "en": "Automatic check: {0}",
     "vi": "Kiểm tra tự động: {0}"
@@ -238,18 +230,6 @@
   "높을수록 더 오래 생각하며 구독 사용량이 늘 수 있습니다. 지원 범위는 모델마다 다릅니다.": {
     "en": "Higher effort spends more time reasoning and may use more of your subscription. Supported levels vary by model.",
     "vi": "Mức cao hơn dành nhiều thời gian suy luận hơn và có thể dùng nhiều hạn mức hơn. Các mức hỗ trợ tùy thuộc mô hình."
-  },
-  "적용하면 Buzz를 다시 실행합니다.": {
-    "en": "Applying settings restarts Buzz.",
-    "vi": "Áp dụng cài đặt sẽ khởi động lại Buzz."
-  },
-  "실행 중인 모든 에이전트의 응답이 중단될 수 있습니다.": {
-    "en": "Responses from all running agents may be interrupted.",
-    "vi": "Phản hồi của tất cả tác nhân đang chạy có thể bị ngắt."
-  },
-  "저장하고 Buzz 재시작": {
-    "en": "Save and restart Buzz",
-    "vi": "Lưu và khởi động lại Buzz"
   },
   "서비스마다 여러 계정을 등록하고 에이전트에 연결하세요.": {
     "en": "Add multiple accounts per service and assign them to agents.",
@@ -722,5 +702,25 @@
   "로컬 설정을 처리하지 못했습니다. 파일 권한과 JSON 형식을 확인하세요.": {
     "en": "Could not process local settings. Check file permissions and JSON format.",
     "vi": "Không thể xử lý cài đặt cục bộ. Kiểm tra quyền tệp và định dạng JSON."
+  },
+  "{0} 설정을 저장했습니다. Buzz는 직접 시작하세요.": {
+    "en": "Saved settings for {0}. Start Buzz manually.",
+    "vi": "Đã lưu cài đặt cho {0}. Hãy tự mở Buzz."
+  },
+  "앱을 닫아도 로그인한 Mac에서 동작합니다. 계정을 전환하면 실행 중인 Buzz를 종료합니다. Buzz는 직접 시작하세요.": {
+    "en": "Runs while you are logged into this Mac, even when this app is closed. Switching accounts quits Buzz if it is running. Start Buzz manually.",
+    "vi": "Hoạt động khi bạn đăng nhập vào máy Mac này, kể cả khi đóng ứng dụng. Chuyển tài khoản sẽ đóng Buzz nếu đang chạy. Hãy tự mở Buzz."
+  },
+  "설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.": {
+    "en": "Settings are saved immediately. Start Buzz manually.",
+    "vi": "Cài đặt được lưu ngay. Hãy tự mở Buzz."
+  },
+  "실행 중인 Buzz는 종료되며 모든 에이전트의 응답이 중단될 수 있습니다.": {
+    "en": "Buzz quits if it is running, which may interrupt all agents’ responses.",
+    "vi": "Buzz sẽ đóng nếu đang chạy và có thể ngắt phản hồi của mọi tác nhân."
+  },
+  "설정 저장": {
+    "en": "Save settings",
+    "vi": "Lưu cài đặt"
   }
 }

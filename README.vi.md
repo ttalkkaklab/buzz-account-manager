@@ -22,7 +22,7 @@ Bản tải xuống dành cho Apple Silicon, macOS 14 trở lên. Cần cài Buz
 1. Tải ZIP từ trang Releases và giải nén.
 2. Chuyển **Buzz Account Manager.app** vào `~/Applications`.
 3. Mở ứng dụng, chọn **Tài khoản đăng ký → Thêm tài khoản** rồi đăng nhập.
-4. Chọn tác nhân, tài khoản, mô hình và mức suy luận, sau đó nhấn **Lưu và khởi động lại Buzz**.
+4. Chọn tác nhân, tài khoản, mô hình và mức suy luận, sau đó nhấn **Lưu cài đặt**.
 
 Bản phát hành chỉ có chữ ký ad-hoc, chưa được Apple công chứng. Nếu macOS chặn ứng dụng, kiểm tra trong Cài đặt hệ thống → Quyền riêng tư & Bảo mật hoặc tự biên dịch từ mã nguồn. ZIP không chứa thông tin đăng nhập.
 
@@ -34,7 +34,7 @@ Mỗi tác nhân có thể chọn tối đa ba tài khoản dự phòng cùng d�
 
 Tiến trình nền kiểm tra mỗi năm phút khi bạn đã đăng nhập vào macOS và máy không ngủ, kể cả khi đóng ứng dụng. Chỉ chuyển khi kết quả mới xác nhận hết hạn mức áp dụng cho mô hình hiện tại và tài khoản dự phòng còn dung lượng. Không chuyển khi kiểm tra thất bại hoặc dữ liệu đã cũ. Giữ nguyên mô hình và mức suy luận.
 
-**Lưu cài đặt tác nhân hoặc tự động chuyển tài khoản sẽ khởi động lại Buzz, có thể ngắt phản hồi của mọi tác nhân. Yêu cầu bị ngắt không được tự động gửi lại.**
+**Cài đặt được lưu ngay. Lưu cài đặt tác nhân hoặc tự động chuyển tài khoản sẽ đóng Buzz nếu đang chạy, có thể ngắt phản hồi của mọi tác nhân. Hãy tự mở Buzz để dùng cài đặt đã lưu. Yêu cầu bị ngắt không được tự động gửi lại.**
 
 ## Ngôn ngữ và dữ liệu
 
