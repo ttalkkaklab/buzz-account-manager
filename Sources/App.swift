@@ -128,7 +128,7 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
             catch { self.error = L("자동 조회를 시작하지 못했습니다. ") + error.localizedDescription }
         }
         monitorTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self = self, !self.busy, !self.loginRunning else { return }
                 if let data = try? await callBackend("status"), let latest = try? JSONDecoder().decode(Snapshot.self, from: data) {
                     self.snapshot = latest
@@ -236,13 +236,13 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
             if bytes.isEmpty { handle.readabilityHandler = nil; return }
             let chunk = String(decoding: bytes, as: UTF8.self)
                 .replacingOccurrences(of: "\u{001B}\\[[0-9;?]*[ -/]*[@-~]", with: "", options: .regularExpression)
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.appendLoginChunk(chunk)
             }
         }
         task.terminationHandler = { [weak self] process in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.loginRunning = false
                 self.loginCode = nil
