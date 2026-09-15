@@ -1,0 +1,17 @@
+name: macOS checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run isolated tests
+        run: ./scripts/test.sh
+      - name: Build and verify signature
+        run: |
+          BUZZ_INSTALL=0 ./build.sh
+          codesign --verify --deep --strict 'build/Buzz Account Manager.app'

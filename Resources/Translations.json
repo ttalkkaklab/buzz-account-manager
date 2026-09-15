@@ -1,0 +1,726 @@
+{
+  "설정을 읽지 못했습니다. 다시 시도해 주세요.": {
+    "en": "Could not read settings. Please try again.",
+    "vi": "Không thể đọc cài đặt. Vui lòng thử lại."
+  },
+  "자동 조회를 시작하지 못했습니다. ": {
+    "en": "Could not start automatic checks. ",
+    "vi": "Không thể bắt đầu kiểm tra tự động. "
+  },
+  "잔량을 조회하지 못했습니다. 다시 조회하세요.": {
+    "en": "Could not check remaining usage. Please refresh.",
+    "vi": "Không thể kiểm tra dung lượng còn lại. Vui lòng làm mới."
+  },
+  "로그인 코드가 준비됐습니다. 아래 코드를 로그인 페이지에 입력하세요.": {
+    "en": "Your sign-in code is ready. Enter it on the sign-in page.",
+    "vi": "Mã đăng nhập đã sẵn sàng. Nhập mã bên dưới vào trang đăng nhập."
+  },
+  "로그인 절차를 시작합니다. 브라우저에서 사용할 계정을 확인해 주세요.": {
+    "en": "Starting sign-in. Check the account you select in your browser.",
+    "vi": "Đang bắt đầu đăng nhập. Kiểm tra tài khoản bạn chọn trong trình duyệt."
+  },
+  "로그인 절차가 끝났습니다. 저장된 인증정보를 확인합니다.": {
+    "en": "Sign-in finished. Checking saved credentials.",
+    "vi": "Đã kết thúc đăng nhập. Đang kiểm tra thông tin xác thực đã lưu."
+  },
+  "로그인이 종료됐습니다. 다시 시도하거나 창을 닫으세요.": {
+    "en": "Sign-in ended. Try again or close this window.",
+    "vi": "Đã kết thúc đăng nhập. Thử lại hoặc đóng cửa sổ này."
+  },
+  "로그인과 모델 설정을 확인하는 중…": {
+    "en": "Checking sign-in and model settings…",
+    "vi": "Đang kiểm tra đăng nhập và cài đặt mô hình…"
+  },
+  "Buzz를 정상 종료하는 중…": {
+    "en": "Closing Buzz…",
+    "vi": "Đang đóng Buzz…"
+  },
+  "Buzz를 종료하지 못했습니다. 직접 종료한 뒤 다시 적용하세요.": {
+    "en": "Could not close Buzz. Close it manually and apply again.",
+    "vi": "Không thể đóng Buzz. Hãy đóng thủ công rồi áp dụng lại."
+  },
+  "Buzz가 아직 종료되지 않았습니다. 설정은 변경하지 않았습니다.": {
+    "en": "Buzz is still running. Settings have not changed.",
+    "vi": "Buzz vẫn đang chạy. Cài đặt chưa thay đổi."
+  },
+  "설정을 백업하고 저장하는 중…": {
+    "en": "Backing up and saving settings…",
+    "vi": "Đang sao lưu và lưu cài đặt…"
+  },
+  "Buzz를 다시 실행하는 중…": {
+    "en": "Restarting Buzz…",
+    "vi": "Đang khởi động lại Buzz…"
+  },
+  "{0}에 적용했습니다. Buzz를 다시 실행했습니다.": {
+    "en": "Applied to {0}. Buzz has restarted.",
+    "vi": "Đã áp dụng cho {0}. Buzz đã khởi động lại."
+  },
+  "설정은 저장했지만 Buzz를 다시 열지 못했습니다. ": {
+    "en": "Settings saved, but Buzz could not reopen. ",
+    "vi": "Đã lưu cài đặt nhưng không thể mở lại Buzz. "
+  },
+  "딸깍맨": {
+    "en": "Ttalkkak Man",
+    "vi": "Ttalkkak Man"
+  },
+  "Buzz 계정 관리": {
+    "en": "Buzz Account Manager",
+    "vi": "Quản lý tài khoản Buzz"
+  },
+  "이 Mac의 에이전트": {
+    "en": "Agents on this Mac",
+    "vi": "Các tác nhân trên máy Mac này"
+  },
+  "에이전트": {
+    "en": "Agents",
+    "vi": "Tác nhân"
+  },
+  "구독 계정": {
+    "en": "Subscription accounts",
+    "vi": "Tài khoản đăng ký"
+  },
+  "로컬 설정": {
+    "en": "Local settings",
+    "vi": "Cài đặt cục bộ"
+  },
+  "새로고침": {
+    "en": "Refresh",
+    "vi": "Làm mới"
+  },
+  "에이전트를 선택하세요": {
+    "en": "Select an agent",
+    "vi": "Chọn một tác nhân"
+  },
+  "Buzz에 등록된 에이전트가 왼쪽에 표시됩니다.": {
+    "en": "Your Buzz agents appear on the left.",
+    "vi": "Các tác nhân Buzz của bạn xuất hiện ở bên trái."
+  },
+  "Buzz 설정을 읽는 중…": {
+    "en": "Loading Buzz settings…",
+    "vi": "Đang tải cài đặt Buzz…"
+  },
+  "Buzz 설정을 불러오세요.": {
+    "en": "Load your Buzz settings.",
+    "vi": "Tải cài đặt Buzz của bạn."
+  },
+  "설정을 확인해 주세요": {
+    "en": "Check your settings",
+    "vi": "Kiểm tra cài đặt"
+  },
+  "확인": {
+    "en": "OK",
+    "vi": "OK"
+  },
+  "구독 계정과 생각의 깊이를 선택하세요.": {
+    "en": "Choose a subscription account and reasoning effort.",
+    "vi": "Chọn tài khoản đăng ký và mức độ suy luận."
+  },
+  "이름 · Buzz 신원 · 팀은 그대로 유지합니다.": {
+    "en": "Name, Buzz identity, and team stay the same.",
+    "vi": "Tên, danh tính Buzz và nhóm được giữ nguyên."
+  },
+  "현재 구독 계정 잔량": {
+    "en": "Current account remaining usage",
+    "vi": "Dung lượng còn lại của tài khoản hiện tại"
+  },
+  "계정 등록 필요": {
+    "en": "Account registration required",
+    "vi": "Cần thêm tài khoản"
+  },
+  "잔량 새로고침": {
+    "en": "Refresh usage",
+    "vi": "Làm mới dung lượng"
+  },
+  "AI 서비스": {
+    "en": "AI service",
+    "vi": "Dịch vụ AI"
+  },
+  "Ollama 서버": {
+    "en": "Ollama server",
+    "vi": "Máy chủ Ollama"
+  },
+  "기존 경로: 계정 등록 필요": {
+    "en": "Existing path: register an account",
+    "vi": "Đường dẫn hiện có: cần thêm tài khoản"
+  },
+  "계정 추가": {
+    "en": "Add account",
+    "vi": "Thêm tài khoản"
+  },
+  "Ollama 서버에 연결됐습니다.": {
+    "en": "Connected to the Ollama server.",
+    "vi": "Đã kết nối với máy chủ Ollama."
+  },
+  "Ollama 서버를 실행하거나 서버 주소를 추가하세요.": {
+    "en": "Start the Ollama server or add its address.",
+    "vi": "Khởi chạy máy chủ Ollama hoặc thêm địa chỉ máy chủ."
+  },
+  "저장된 로그인 정보가 있습니다.": {
+    "en": "Saved credentials are available.",
+    "vi": "Đã có thông tin đăng nhập được lưu."
+  },
+  "계정 탭에서 먼저 로그인하세요.": {
+    "en": "Sign in on the Accounts tab first.",
+    "vi": "Đăng nhập trong mục Tài khoản trước."
+  },
+  "도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 왼쪽 아래 새로고침을 누르세요.": {
+    "en": "Uses local models that support tool calls. Install a model, then click Refresh at the bottom left.",
+    "vi": "Sử dụng mô hình cục bộ hỗ trợ gọi công cụ. Cài đặt mô hình rồi nhấn Làm mới ở góc dưới bên trái."
+  },
+  "예비 구독 계정 · 최대 3개": {
+    "en": "Fallback accounts · up to 3",
+    "vi": "Tài khoản dự phòng · tối đa 3"
+  },
+  "예비 {0}": {
+    "en": "Fallback {0}",
+    "vi": "Dự phòng {0}"
+  },
+  "선택 안 함": {
+    "en": "None",
+    "vi": "Không chọn"
+  },
+  " · 로그인 필요": {
+    "en": " · Sign-in required",
+    "vi": " · Cần đăng nhập"
+  },
+  "한도 소진 시 예비 계정으로 자동 전환": {
+    "en": "Automatically switch accounts when the limit is reached",
+    "vi": "Tự động chuyển tài khoản khi hết hạn mức"
+  },
+  "5분마다 잔량을 조회하고 위 순서대로 전환합니다. 모델과 effort는 유지합니다. 조회 실패 시에는 전환하지 않습니다.": {
+    "en": "Checks usage every 5 minutes and switches in the order above. Model and effort stay the same. Failed checks do not trigger a switch.",
+    "vi": "Kiểm tra mỗi 5 phút và chuyển theo thứ tự trên. Giữ nguyên mô hình và mức suy luận. Không chuyển nếu kiểm tra thất bại."
+  },
+  "앱을 닫아도 로그인한 Mac에서 동작합니다. 전환할 때 Buzz를 다시 실행하므로 모든 에이전트의 응답이 중단될 수 있습니다.": {
+    "en": "Runs while you are logged into this Mac, even when this app is closed. Switching restarts Buzz and may interrupt all agents’ responses.",
+    "vi": "Hoạt động khi bạn đăng nhập vào máy Mac này, kể cả khi đóng ứng dụng. Việc chuyển tài khoản khởi động lại Buzz và có thể ngắt phản hồi của mọi tác nhân."
+  },
+  "자동 조회: {0}": {
+    "en": "Automatic check: {0}",
+    "vi": "Kiểm tra tự động: {0}"
+  },
+  "모델": {
+    "en": "Model",
+    "vi": "Mô hình"
+  },
+  "사용할 로컬 모델이 없습니다. Ollama 서버에 도구 호출을 지원하는 모델을 설치하고 새로고침하세요.": {
+    "en": "No local models available. Install a model with tool support on the Ollama server, then refresh.",
+    "vi": "Không có mô hình cục bộ. Cài đặt mô hình hỗ trợ công cụ trên máy chủ Ollama rồi làm mới."
+  },
+  "모델 ID": {
+    "en": "Model ID",
+    "vi": "ID mô hình"
+  },
+  "모델 ID 직접 입력": {
+    "en": "Enter model ID manually",
+    "vi": "Nhập ID mô hình thủ công"
+  },
+  "Ollama 설치 모델": {
+    "en": "Installed Ollama models",
+    "vi": "Mô hình Ollama đã cài"
+  },
+  "CLI 모델 별칭": {
+    "en": "CLI model aliases",
+    "vi": "Bí danh mô hình CLI"
+  },
+  "로컬 모델 캐시": {
+    "en": "Local model cache",
+    "vi": "Bộ nhớ đệm mô hình cục bộ"
+  },
+  "모델 기본값": {
+    "en": "Model default",
+    "vi": "Mặc định của mô hình"
+  },
+  "Ollama는 모델의 기본 추론 설정을 사용합니다. 구독 계정의 사용량은 차감하지 않습니다.": {
+    "en": "Ollama uses the model’s default reasoning settings and does not consume subscription usage.",
+    "vi": "Ollama dùng cài đặt suy luận mặc định của mô hình và không tiêu hao hạn mức đăng ký."
+  },
+  "높을수록 더 오래 생각하며 구독 사용량이 늘 수 있습니다. 지원 범위는 모델마다 다릅니다.": {
+    "en": "Higher effort spends more time reasoning and may use more of your subscription. Supported levels vary by model.",
+    "vi": "Mức cao hơn dành nhiều thời gian suy luận hơn và có thể dùng nhiều hạn mức hơn. Các mức hỗ trợ tùy thuộc mô hình."
+  },
+  "적용하면 Buzz를 다시 실행합니다.": {
+    "en": "Applying settings restarts Buzz.",
+    "vi": "Áp dụng cài đặt sẽ khởi động lại Buzz."
+  },
+  "실행 중인 모든 에이전트의 응답이 중단될 수 있습니다.": {
+    "en": "Responses from all running agents may be interrupted.",
+    "vi": "Phản hồi của tất cả tác nhân đang chạy có thể bị ngắt."
+  },
+  "저장하고 Buzz 재시작": {
+    "en": "Save and restart Buzz",
+    "vi": "Lưu và khởi động lại Buzz"
+  },
+  "서비스마다 여러 계정을 등록하고 에이전트에 연결하세요.": {
+    "en": "Add multiple accounts per service and assign them to agents.",
+    "vi": "Thêm nhiều tài khoản cho mỗi dịch vụ và gán cho các tác nhân."
+  },
+  "서버 연결됨": {
+    "en": "Server connected",
+    "vi": "Đã kết nối máy chủ"
+  },
+  "서버 연결 필요": {
+    "en": "Server connection required",
+    "vi": "Cần kết nối máy chủ"
+  },
+  "로그인 정보 있음": {
+    "en": "Credentials saved",
+    "vi": "Đã lưu thông tin đăng nhập"
+  },
+  "로그인 필요": {
+    "en": "Sign-in required",
+    "vi": "Cần đăng nhập"
+  },
+  "연결 확인": {
+    "en": "Check connection",
+    "vi": "Kiểm tra kết nối"
+  },
+  "다시 로그인": {
+    "en": "Sign in again",
+    "vi": "Đăng nhập lại"
+  },
+  "로그인": {
+    "en": "Sign in",
+    "vi": "Đăng nhập"
+  },
+  "기본 계정": {
+    "en": "Default account",
+    "vi": "Tài khoản mặc định"
+  },
+  "이 계정 잔량 새로고침": {
+    "en": "Refresh this account’s usage",
+    "vi": "Làm mới dung lượng tài khoản này"
+  },
+  "잔량은 서비스가 제공한 구독 한도의 남은 비율입니다. 정확한 토큰 수로 환산하지 않습니다. 조회 시각 이후의 사용량은 새로고침하면 반영됩니다.": {
+    "en": "Remaining usage is a percentage of the subscription limit reported by the service, not an exact token count. Refresh to include usage since the last check.",
+    "vi": "Dung lượng còn lại là tỷ lệ hạn mức đăng ký do dịch vụ cung cấp, không phải số token chính xác. Làm mới để cập nhật mức sử dụng từ lần kiểm tra trước."
+  },
+  "새 계정은 별도 경로에 로그인합니다. 기존 CLI의 기본 계정은 변경하지 않습니다.": {
+    "en": "New accounts sign in to separate directories. The CLI’s default account stays the same.",
+    "vi": "Tài khoản mới đăng nhập trong thư mục riêng. Tài khoản mặc định của CLI được giữ nguyên."
+  },
+  "별도 계정은 CLI 설정과 세션도 분리됩니다. 로그인 만료·구독 한도·모델 접근 권한은 서비스가 실행 시 확인합니다.": {
+    "en": "Each account has separate CLI settings and sessions. The service checks sign-in expiry, subscription limits, and model access at runtime.",
+    "vi": "Mỗi tài khoản có cài đặt CLI và phiên riêng. Dịch vụ kiểm tra thời hạn đăng nhập, hạn mức và quyền truy cập mô hình khi chạy."
+  },
+  "잔량 조회 중…": {
+    "en": "Checking usage…",
+    "vi": "Đang kiểm tra dung lượng…"
+  },
+  "기본 사용 한도 정보가 없습니다.": {
+    "en": "No standard usage limit information available.",
+    "vi": "Không có thông tin hạn mức sử dụng cơ bản."
+  },
+  "자세히 보기": {
+    "en": "Show details",
+    "vi": "Xem chi tiết"
+  },
+  "조회 {0}": {
+    "en": "Checked {0}",
+    "vi": "Đã kiểm tra {0}"
+  },
+  "잔량 새로고침을 누르면 조회합니다.": {
+    "en": "Click Refresh usage to check.",
+    "vi": "Nhấn Làm mới dung lượng để kiểm tra."
+  },
+  "%.1f%% 남음": {
+    "en": "%.1f%% remaining",
+    "vi": "Còn %.1f%%"
+  },
+  "초기화 시각이 지났습니다. 잔량을 새로고침하세요.": {
+    "en": "The reset time has passed. Refresh usage.",
+    "vi": "Đã qua thời điểm đặt lại. Hãy làm mới dung lượng."
+  },
+  "초기화 {0}": {
+    "en": "Resets {0}",
+    "vi": "Đặt lại {0}"
+  },
+  "구독 계정 추가": {
+    "en": "Add subscription account",
+    "vi": "Thêm tài khoản đăng ký"
+  },
+  "알아보기 쉬운 이름을 붙인 뒤 서비스에 로그인하세요.": {
+    "en": "Give the account a recognizable name, then sign in.",
+    "vi": "Đặt tên dễ nhận biết cho tài khoản rồi đăng nhập."
+  },
+  "서비스": {
+    "en": "Service",
+    "vi": "Dịch vụ"
+  },
+  "예: 개인 Pro, 업무 계정": {
+    "en": "e.g. Personal Pro, Work account",
+    "vi": "Ví dụ: Pro cá nhân, Tài khoản công việc"
+  },
+  "Ollama 서버 주소": {
+    "en": "Ollama server address",
+    "vi": "Địa chỉ máy chủ Ollama"
+  },
+  "예: http://127.0.0.1:11434 또는 맥미니의 서버 주소. 로그인과 모델 다운로드 없이 연결만 등록합니다.": {
+    "en": "e.g. http://127.0.0.1:11434 or your Mac mini’s server address. Adds the connection without signing in or downloading models.",
+    "vi": "Ví dụ: http://127.0.0.1:11434 hoặc địa chỉ máy chủ Mac mini. Chỉ thêm kết nối, không đăng nhập hay tải mô hình."
+  },
+  "비밀번호와 토큰은 해당 CLI가 보관합니다. 이 앱에는 직접 입력하지 않습니다.": {
+    "en": "Passwords and tokens are stored by the CLI. You do not enter them in this app.",
+    "vi": "Mật khẩu và token do CLI lưu trữ. Bạn không nhập trực tiếp vào ứng dụng này."
+  },
+  "취소": {
+    "en": "Cancel",
+    "vi": "Hủy"
+  },
+  "서버 추가": {
+    "en": "Add server",
+    "vi": "Thêm máy chủ"
+  },
+  "추가하고 로그인": {
+    "en": "Add and sign in",
+    "vi": "Thêm và đăng nhập"
+  },
+  "{0} 로그인": {
+    "en": "Sign in to {0}",
+    "vi": "Đăng nhập vào {0}"
+  },
+  "안내된 주소를 열고 코드를 입력하세요. 브라우저에서는 연결할 계정을 직접 선택하세요.": {
+    "en": "Open the provided address and enter the code. Select the account to connect in your browser.",
+    "vi": "Mở địa chỉ được cung cấp và nhập mã. Chọn tài khoản cần kết nối trong trình duyệt."
+  },
+  "로그인 페이지에 입력할 코드": {
+    "en": "Code for the sign-in page",
+    "vi": "Mã dùng trên trang đăng nhập"
+  },
+  "코드를 받는 중…": {
+    "en": "Waiting for code…",
+    "vi": "Đang chờ mã…"
+  },
+  "Codex 로그인 코드": {
+    "en": "Codex sign-in code",
+    "vi": "Mã đăng nhập Codex"
+  },
+  "복사": {
+    "en": "Copy",
+    "vi": "Sao chép"
+  },
+  "로그인 페이지 열기": {
+    "en": "Open sign-in page",
+    "vi": "Mở trang đăng nhập"
+  },
+  "코드를 복사한 뒤 로그인 페이지의 코드 입력란에 붙여 넣으세요.": {
+    "en": "Copy the code and paste it into the code field on the sign-in page.",
+    "vi": "Sao chép mã và dán vào ô nhập mã trên trang đăng nhập."
+  },
+  "로그인이 종료됐습니다. 다시 로그인하면 새 코드를 받습니다.": {
+    "en": "Sign-in ended. Sign in again to get a new code.",
+    "vi": "Đã kết thúc đăng nhập. Đăng nhập lại để nhận mã mới."
+  },
+  "로그인 페이지 열기 · {0}": {
+    "en": "Open sign-in page · {0}",
+    "vi": "Mở trang đăng nhập · {0}"
+  },
+  "CLI가 코드 입력을 요청한 경우에만 입력": {
+    "en": "Enter only if the CLI asks for a code",
+    "vi": "Chỉ nhập khi CLI yêu cầu mã"
+  },
+  "입력": {
+    "en": "Submit",
+    "vi": "Gửi"
+  },
+  "로그인 취소": {
+    "en": "Cancel sign-in",
+    "vi": "Hủy đăng nhập"
+  },
+  "완료 확인": {
+    "en": "Check completion",
+    "vi": "Kiểm tra hoàn tất"
+  },
+  "닫기": {
+    "en": "Close",
+    "vi": "Đóng"
+  },
+  "로그인 정보를 확인했습니다. 에이전트 화면에서 연결할 수 있습니다.": {
+    "en": "Credentials found. You can assign this account on the agent screen.",
+    "vi": "Đã tìm thấy thông tin đăng nhập. Bạn có thể gán tài khoản trong màn hình tác nhân."
+  },
+  "언어": {
+    "en": "Language",
+    "vi": "Ngôn ngữ"
+  },
+  "시스템 설정": {
+    "en": "System default",
+    "vi": "Theo hệ thống"
+  },
+  "Effort": {
+    "en": "Reasoning effort",
+    "vi": "Mức độ suy luận"
+  },
+  "이 Mac 기본 계정": {
+    "en": "This Mac’s default account",
+    "vi": "Tài khoản mặc định của máy Mac này"
+  },
+  "이 Mac의 Ollama": {
+    "en": "Ollama on this Mac",
+    "vi": "Ollama trên máy Mac này"
+  },
+  "Codex 연결이 종료됐습니다.": {
+    "en": "The Codex connection closed.",
+    "vi": "Kết nối Codex đã đóng."
+  },
+  "Codex 요청을 처리하지 못했습니다. 로그인 상태를 확인하세요.": {
+    "en": "Could not process the Codex request. Check your sign-in status.",
+    "vi": "Không thể xử lý yêu cầu Codex. Kiểm tra trạng thái đăng nhập."
+  },
+  "단기": {
+    "en": "Short term",
+    "vi": "Ngắn hạn"
+  },
+  "장기": {
+    "en": "Long term",
+    "vi": "Dài hạn"
+  },
+  " 크레딧: 무제한": {
+    "en": " credits: unlimited",
+    "vi": " tín dụng: không giới hạn"
+  },
+  " 크레딧: ": {
+    "en": " credits: ",
+    "vi": " tín dụng: "
+  },
+  ": 지출 한도 도달": {
+    "en": ": spending limit reached",
+    "vi": ": đã đạt hạn mức chi tiêu"
+  },
+  "서비스가 현재 기본 구독 사용을 제한하고 있습니다.": {
+    "en": "The service is currently restricting standard subscription usage.",
+    "vi": "Dịch vụ hiện đang hạn chế sử dụng gói đăng ký cơ bản."
+  },
+  "계정이 없습니다. 새로고침해 주세요.": {
+    "en": "Account not found. Please refresh.",
+    "vi": "Không tìm thấy tài khoản. Vui lòng làm mới."
+  },
+  " CLI를 찾지 못했습니다.": {
+    "en": " CLI was not found.",
+    "vi": " CLI không được tìm thấy."
+  },
+  "Ollama 주소는 http://호스트:포트 형식으로 입력하세요.": {
+    "en": "Enter the Ollama address as http://host:port.",
+    "vi": "Nhập địa chỉ Ollama theo dạng http://máy-chủ:cổng."
+  },
+  "Ollama 서버 포트를 확인하세요.": {
+    "en": "Check the Ollama server port.",
+    "vi": "Kiểm tra cổng máy chủ Ollama."
+  },
+  "지원하지 않는 서비스입니다.": {
+    "en": "Unsupported service.",
+    "vi": "Dịch vụ không được hỗ trợ."
+  },
+  "계정 이름은 1~80자로 입력하세요.": {
+    "en": "Account names must be 1–80 characters.",
+    "vi": "Tên tài khoản phải có từ 1 đến 80 ký tự."
+  },
+  "같은 서비스에 같은 이름의 계정이 있습니다.": {
+    "en": "An account with this name already exists for this service.",
+    "vi": "Đã có tài khoản cùng tên cho dịch vụ này."
+  },
+  "기본 계정은 목록에서 삭제할 수 없습니다.": {
+    "en": "The default account cannot be removed.",
+    "vi": "Không thể xóa tài khoản mặc định."
+  },
+  "에이전트에 연결된 계정입니다. 먼저 다른 계정으로 바꾸세요.": {
+    "en": "This account is assigned to an agent. Switch to another account first.",
+    "vi": "Tài khoản này đang được gán cho tác nhân. Hãy đổi sang tài khoản khác trước."
+  },
+  "계정 목록에서 제거했습니다. 로그인 파일은 보관합니다.": {
+    "en": "Removed from the account list. Sign-in files are retained.",
+    "vi": "Đã xóa khỏi danh sách tài khoản. Các tệp đăng nhập được giữ lại."
+  },
+  "Ollama는 로그인 없이 서버에 연결합니다.": {
+    "en": "Ollama connects without signing in.",
+    "vi": "Ollama kết nối mà không cần đăng nhập."
+  },
+  "별도 계정을 추가해서 로그인하세요. 기본 로그인은 변경하지 않습니다.": {
+    "en": "Add a separate account to sign in. The default sign-in stays the same.",
+    "vi": "Thêm tài khoản riêng để đăng nhập. Thông tin đăng nhập mặc định được giữ nguyên."
+  },
+  "별도 Codex 계정을 선택하세요.": {
+    "en": "Select a separate Codex account.",
+    "vi": "Chọn một tài khoản Codex riêng."
+  },
+  "로그인 코드를 받지 못했습니다. 다시 시도하세요.": {
+    "en": "Could not get a sign-in code. Try again.",
+    "vi": "Không thể lấy mã đăng nhập. Hãy thử lại."
+  },
+  "로그인이 완료되지 않았습니다. 코드를 새로 받아 다시 시도하세요.": {
+    "en": "Sign-in was not completed. Get a new code and try again.",
+    "vi": "Chưa hoàn tất đăng nhập. Lấy mã mới và thử lại."
+  },
+  "로그인 정보를 저장했습니다.": {
+    "en": "Credentials saved.",
+    "vi": "Đã lưu thông tin đăng nhập."
+  },
+  "로그인을 취소했거나 코드가 만료됐습니다.": {
+    "en": "Sign-in was canceled or the code expired.",
+    "vi": "Đăng nhập đã bị hủy hoặc mã đã hết hạn."
+  },
+  "로컬 모델에는 Codex·Claude 구독 잔량이 적용되지 않습니다.": {
+    "en": "Codex and Claude subscription limits do not apply to local models.",
+    "vi": "Hạn mức đăng ký Codex và Claude không áp dụng cho mô hình cục bộ."
+  },
+  "Ollama 서버에 연결되지 않았습니다. 서버 실행과 주소를 확인하세요.": {
+    "en": "Not connected to Ollama. Check the server is running and its address is correct.",
+    "vi": "Chưa kết nối với Ollama. Kiểm tra máy chủ đang chạy và địa chỉ chính xác."
+  },
+  "로그인 후 잔량을 조회할 수 있습니다.": {
+    "en": "Sign in to check remaining usage.",
+    "vi": "Đăng nhập để kiểm tra dung lượng còn lại."
+  },
+  "현재 Grok CLI는 계정 잔량 조회를 제공하지 않습니다.": {
+    "en": "The Grok CLI does not currently provide account usage limits.",
+    "vi": "Grok CLI hiện không cung cấp thông tin hạn mức tài khoản."
+  },
+  "로그인 정보를 읽지 못했습니다.": {
+    "en": "Could not read credentials.",
+    "vi": "Không thể đọc thông tin đăng nhập."
+  },
+  "로그인 정보를 찾지 못했습니다.": {
+    "en": "Credentials not found.",
+    "vi": "Không tìm thấy thông tin đăng nhập."
+  },
+  "서비스가 잔량 정보를 제공하지 않았습니다.": {
+    "en": "The service did not provide remaining usage information.",
+    "vi": "Dịch vụ không cung cấp thông tin dung lượng còn lại."
+  },
+  "로그인이 만료됐거나 조회 권한이 없습니다. CLI에서 로그인 상태를 확인하세요.": {
+    "en": "Sign-in expired or access was denied. Check sign-in status in the CLI.",
+    "vi": "Đăng nhập đã hết hạn hoặc không có quyền truy cập. Kiểm tra trạng thái đăng nhập trong CLI."
+  },
+  "조회 요청이 많습니다. 잠시 후 다시 조회하세요.": {
+    "en": "Too many requests. Try again shortly.",
+    "vi": "Quá nhiều yêu cầu. Vui lòng thử lại sau."
+  },
+  "서비스에서 잔량을 조회하지 못했습니다.": {
+    "en": "Could not retrieve usage from the service.",
+    "vi": "Không thể lấy thông tin dung lượng từ dịch vụ."
+  },
+  "잔량을 조회하지 못했습니다. 로그인 상태와 네트워크를 확인하세요.": {
+    "en": "Could not check usage. Check your sign-in status and network.",
+    "vi": "Không thể kiểm tra dung lượng. Kiểm tra đăng nhập và mạng."
+  },
+  "서비스와 계정이 일치하지 않습니다.": {
+    "en": "The account does not match the service.",
+    "vi": "Tài khoản không khớp với dịch vụ."
+  },
+  "Ollama 서버에 연결하지 못했습니다. 서버를 실행하고 주소를 확인하세요.": {
+    "en": "Could not connect to Ollama. Start the server and check its address.",
+    "vi": "Không thể kết nối với Ollama. Khởi chạy máy chủ và kiểm tra địa chỉ."
+  },
+  "로그인 정보를 찾지 못했습니다. 계정 탭에서 먼저 로그인하세요.": {
+    "en": "Credentials not found. Sign in on the Accounts tab first.",
+    "vi": "Không tìm thấy thông tin đăng nhập. Đăng nhập trong mục Tài khoản trước."
+  },
+  "모델 ID를 확인하세요.": {
+    "en": "Check the model ID.",
+    "vi": "Kiểm tra ID mô hình."
+  },
+  "서버에 설치된 로컬 대화 모델을 선택하세요.": {
+    "en": "Select a local chat model installed on the server.",
+    "vi": "Chọn mô hình trò chuyện cục bộ đã cài trên máy chủ."
+  },
+  "로컬 실행과 도구 호출을 지원하는 Ollama 모델을 선택하세요.": {
+    "en": "Select an Ollama model that supports local execution and tool calls.",
+    "vi": "Chọn mô hình Ollama hỗ trợ chạy cục bộ và gọi công cụ."
+  },
+  "지원하지 않는 effort 값입니다.": {
+    "en": "Unsupported reasoning effort.",
+    "vi": "Mức độ suy luận không được hỗ trợ."
+  },
+  "선택한 모델이 지원하는 effort를 선택하세요.": {
+    "en": "Choose an effort level supported by the selected model.",
+    "vi": "Chọn mức suy luận được mô hình đã chọn hỗ trợ."
+  },
+  "Buzz가 아직 실행 중입니다. 종료된 뒤 다시 적용하세요.": {
+    "en": "Buzz is still running. Close it and apply again.",
+    "vi": "Buzz vẫn đang chạy. Đóng rồi áp dụng lại."
+  },
+  "Buzz 설정이 바뀌었습니다. 새로고침 후 다시 선택하세요.": {
+    "en": "Buzz settings changed. Refresh and select again.",
+    "vi": "Cài đặt Buzz đã thay đổi. Làm mới và chọn lại."
+  },
+  "에이전트가 더 이상 존재하지 않습니다.": {
+    "en": "This agent no longer exists.",
+    "vi": "Tác nhân này không còn tồn tại."
+  },
+  "자동 전환으로 현재 계정이 바뀌었습니다. 새로고침 후 다시 저장하세요.": {
+    "en": "Automatic switching changed the current account. Refresh and save again.",
+    "vi": "Tự động chuyển đã đổi tài khoản hiện tại. Làm mới rồi lưu lại."
+  },
+  "에이전트 공개키 형식을 확인하세요.": {
+    "en": "Check the agent’s public key format.",
+    "vi": "Kiểm tra định dạng khóa công khai của tác nhân."
+  },
+  "설정을 저장했습니다.": {
+    "en": "Settings saved.",
+    "vi": "Đã lưu cài đặt."
+  },
+  "예비 계정은 중복 없이 최대 3개까지 선택하세요.": {
+    "en": "Choose up to 3 different fallback accounts.",
+    "vi": "Chọn tối đa 3 tài khoản dự phòng khác nhau."
+  },
+  "자동 전환은 Codex·Claude Code 예비 계정을 선택한 뒤 켤 수 있습니다.": {
+    "en": "Select Codex or Claude Code fallback accounts before enabling automatic switching.",
+    "vi": "Chọn tài khoản dự phòng Codex hoặc Claude Code trước khi bật tự động chuyển."
+  },
+  "현재 계정을 제외하고 같은 서비스의 예비 계정을 선택하세요.": {
+    "en": "Choose fallback accounts from the same service, excluding the current account.",
+    "vi": "Chọn tài khoản dự phòng cùng dịch vụ, khác tài khoản hiện tại."
+  },
+  "예비 계정에 먼저 로그인하세요.": {
+    "en": "Sign in to the fallback account first.",
+    "vi": "Đăng nhập vào tài khoản dự phòng trước."
+  },
+  ": 사용 가능한 예비 계정이 없습니다.": {
+    "en": ": no fallback accounts are available.",
+    "vi": ": không có tài khoản dự phòng khả dụng."
+  },
+  ": 예비 계정으로 전환했습니다.": {
+    "en": ": switched to a fallback account.",
+    "vi": ": đã chuyển sang tài khoản dự phòng."
+  },
+  "Buzz가 종료되지 않아 자동 전환을 보류했습니다.": {
+    "en": "Automatic switching paused because Buzz did not close.",
+    "vi": "Đã hoãn tự động chuyển vì Buzz chưa đóng."
+  },
+  "자동 전환을 완료하지 못했습니다. Buzz 상태와 설정을 확인하세요.": {
+    "en": "Could not complete automatic switching. Check Buzz and its settings.",
+    "vi": "Không thể hoàn tất tự động chuyển. Kiểm tra Buzz và cài đặt."
+  },
+  "Buzz를 직접 다시 실행하세요.": {
+    "en": "Restart Buzz manually.",
+    "vi": "Khởi động lại Buzz thủ công."
+  },
+  "에이전트 설정 이름이 올바르지 않습니다.": {
+    "en": "Invalid agent settings name.",
+    "vi": "Tên cài đặt tác nhân không hợp lệ."
+  },
+  "Buzz가 전달한 에이전트 신원이 없습니다.": {
+    "en": "Buzz did not provide an agent identity.",
+    "vi": "Buzz chưa cung cấp danh tính tác nhân."
+  },
+  "이 실행 도구는 지원하지 않습니다.": {
+    "en": "Unsupported launcher.",
+    "vi": "Trình khởi chạy không được hỗ trợ."
+  },
+  "서비스와 로그인 계정이 일치하지 않습니다.": {
+    "en": "The signed-in account does not match the service.",
+    "vi": "Tài khoản đã đăng nhập không khớp với dịch vụ."
+  },
+  "Codex 설정 형식이 올바르지 않습니다.": {
+    "en": "Invalid Codex settings format.",
+    "vi": "Định dạng cài đặt Codex không hợp lệ."
+  },
+  "지원하지 않는 명령입니다.": {
+    "en": "Unsupported command.",
+    "vi": "Lệnh không được hỗ trợ."
+  },
+  "로컬 설정을 처리하지 못했습니다. 파일 권한과 JSON 형식을 확인하세요.": {
+    "en": "Could not process local settings. Check file permissions and JSON format.",
+    "vi": "Không thể xử lý cài đặt cục bộ. Kiểm tra quyền tệp và định dạng JSON."
+  }
+}
