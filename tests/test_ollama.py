@@ -42,6 +42,22 @@ class OllamaTests(unittest.TestCase):
         self.assertNotIn('CLAUDE_CODE_OAUTH_TOKEN',actual)
         self.assertEqual(actual['ANTHROPIC_DEFAULT_HAIKU_MODEL'],'local:8b')
         self.assertEqual(actual['BUZZ_PRIVATE_KEY'],'identity')
+    def test_missing_model_environment_uses_saved_ollama_model(self):
+        with patch.object(self.manager, 'buzz_running', return_value=False): self.manager.apply(self.req())
+        env={'BUZZ_PRIVATE_KEY':'identity','BUZZ_ACP_AGENT_COMMAND':'/test/bin/claude-agent-acp'}
+        with patch.dict(os.environ,env,clear=True),patch.object(b.os,'execve') as run:
+            self.manager.launch('agent-'+self.pk,[])
+        actual=run.call_args.args[2]
+        self.assertEqual(actual['BUZZ_ACP_MODEL'],'local:8b')
+        self.assertEqual(actual['BUZZ_ACP_MCP_COMMAND'],'/Applications/Buzz.app/Contents/MacOS/buzz-dev-mcp')
+        self.assertEqual(actual['ENABLE_TOOL_SEARCH'],'false')
+        self.assertEqual(actual['ANTHROPIC_MODEL'],'local:8b')
+        self.assertEqual(actual['ANTHROPIC_DEFAULT_OPUS_MODEL'],'local:8b')
+        records=b.read_json(self.manager.store); records[0]['model']=''; b.write_json(self.manager.store,records)
+        with patch.dict(os.environ,env,clear=True),patch.object(b.os,'execve') as run:
+            with self.assertRaises(ValueError): self.manager.launch('agent-'+self.pk,[])
+        run.assert_not_called()
+
     def test_cloud_embedding_and_non_tool_models_are_not_selectable(self):
         with patch.object(self.manager,'ollama_catalog',return_value={'models':[
             dict(name='cloud:cloud'),dict(name='remote',remote_host='https://ollama.com'),
