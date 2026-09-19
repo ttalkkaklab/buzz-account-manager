@@ -78,6 +78,49 @@ class ManagerTests(unittest.TestCase):
     def test_effort_validation(self):
         req = self.request();req['effort'] = 'ultra'
         with self.assertRaises(ValueError):self.manager.validate(req)
+    def test_claude_efforts_save_and_reach_runtime(self):
+        levels = ['low', 'medium', 'high', 'xhigh', 'max']
+        for model in self.manager.models('claude'):
+            self.assertEqual(model['efforts'], levels)
+        for level in levels:
+            with self.subTest(effort=level):
+                req = self.request()
+                req.update(provider='claude', account_id='default-claude', model='opus', effort=level)
+                with patch.object(b.Manager, 'account_ready', return_value=True):
+                    self.manager.apply(req)
+                self.assertEqual(b.read_json(self.manager.store)[1]['effort_level'], level)
+                env = dict(BUZZ_PRIVATE_KEY='test-identity', BUZZ_ACP_AGENT_COMMAND='claude-agent-acp', BUZZ_ACP_MODEL='opus',
+                           BUZZ_ACP_EFFORT_LEVEL=level)
+                with patch.dict(os.environ, env, clear=True), patch.object(os, 'execve') as execute:
+                    self.manager.launch('agent-' + self.pk, [])
+                    self.assertEqual(execute.call_args.args[2]['CLAUDE_CODE_EFFORT_LEVEL'], level)
+        for model in ('opus', 'opus[1m]', 'custom-claude-model'):
+            req = self.request()
+            req.update(provider='claude', account_id='default-claude', model=model, effort='ultra')
+            with patch.object(b.Manager, 'account_ready', return_value=True):
+                with self.assertRaises(ValueError):
+                    self.manager.validate(req)
+
+    def test_update_account_preserves_identity_and_credentials(self):
+        a = self.manager.create_account('Staging', 'ollama', 'http://127.0.0.1:11436')
+        marker = Path(a['home']) / 'credentials.json'
+        marker.write_text('test-secret')
+        before = self.manager.store.read_bytes()
+        self.manager.update_account(a['id'], 'Renamed', 'http://localhost:11436/')
+        actual = b.Manager(self.home).account(a['id'])
+        self.assertEqual(actual, dict(a, name='Renamed', endpoint='http://localhost:11436'))
+        self.assertEqual(marker.read_text(), 'test-secret')
+        self.assertEqual(self.manager.store.read_bytes(), before)
+        raw = self.manager.registry.read_bytes()
+        for identity, name, endpoint in [(a['id'], '', None), (a['id'], 'Bad', 'file:///tmp'),
+                                         ('default-ollama', 'Builtin', None)]:
+            with self.assertRaises(ValueError):
+                self.manager.update_account(identity, name, endpoint)
+            self.assertEqual(self.manager.registry.read_bytes(), raw)
+        other = self.manager.create_account('Other', 'ollama')
+        with self.assertRaises(ValueError):
+            self.manager.update_account(a['id'], other['name'])
+
     def test_new_profiles_never_copy_tokens(self):
         for provider in ('codex', 'claude', 'grok'):
             a = self.manager.create_account('Test account', provider)

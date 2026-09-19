@@ -74,12 +74,27 @@ func processEnvironment() -> [String: String] {
     env["PYTHONUNBUFFERED"] = "1"
     return env
 }
+func pythonExecutable(candidates: [String] = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/Library/Developer/CommandLineTools/usr/bin/python3", "/usr/bin/python3"]) throws -> String {
+    for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
+        let probe = Process()
+        probe.executableURL = URL(fileURLWithPath: path)
+        probe.arguments = ["-c", "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)"]
+        probe.standardOutput = FileHandle.nullDevice
+        probe.standardError = FileHandle.nullDevice
+        do {
+            try probe.run()
+            probe.waitUntilExit()
+            if probe.terminationStatus == 0 { return path }
+        } catch { continue }
+    }
+    throw AppFailure(message: L("Python 3.9 이상을 실행할 수 없습니다. Python 설치 상태를 확인하세요."))
+}
 func callBackend(_ action: String, payload: [String: String]? = nil) async throws -> Data {
     try await withCheckedThrowingContinuation { continuation in
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let task = Process()
-                task.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+                task.executableURL = URL(fileURLWithPath: try pythonExecutable())
                 task.arguments = [helperPath(), action]
                 task.environment = processEnvironment()
                 let output = Pipe(), input = Pipe()
@@ -224,7 +239,10 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
         loginOutput = (L("로그인 절차를 시작합니다. 브라우저에서 사용할 계정을 확인해 주세요.") + "\n")
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/script")
-        task.arguments = ["-q", "/dev/null", "/usr/bin/python3", helperPath(), "login", account.id]
+        let python: String
+        do { python = try pythonExecutable() }
+        catch { self.error = error.localizedDescription; return }
+        task.arguments = ["-q", "/dev/null", python, helperPath(), "login", account.id]
         task.environment = processEnvironment()
         let output = Pipe(), input = Pipe()
         task.standardOutput = output

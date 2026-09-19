@@ -722,5 +722,9 @@
   "설정 저장": {
     "en": "Save settings",
     "vi": "Lưu cài đặt"
+  },
+  "Python 3.9 이상을 실행할 수 없습니다. Python 설치 상태를 확인하세요.": {
+    "en": "Cannot run Python 3.9 or later. Check your Python installation.",
+    "vi": "Không thể chạy Python 3.9 trở lên. Hãy kiểm tra cài đặt Python."
   }
 }
