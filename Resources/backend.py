@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,7 @@ import urllib.parse
 PROVIDERS = ('codex', 'claude', 'grok', 'ollama')
 CLI_COMMAND = {'codex': 'codex-acp', 'claude': 'claude-agent-acp', 'grok': 'grok', 'ollama': 'claude-agent-acp'}
 ALL_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max', 'ultra')
+CLAUDE_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 AUTH_OVERRIDES = (
     'OPENAI_API_KEY', 'OPENAI_API_KEY_FILE', 'OPENAI_BASE_URL', 'OPENAI_API_BASE',
     'CODEX_API_KEY', 'CODEX_API_KEY_FILE', 'OPENAI_ORGANIZATION', 'OPENAI_ORG_ID',
@@ -376,7 +378,7 @@ class Manager:
             except (ValueError, KeyError, TypeError):
                 continue
         if provider == 'claude':
-            return [dict(id=m, name=n, efforts=['low', 'medium', 'high', 'max'], default_effort='medium')
+            return [dict(id=m, name=n, efforts=list(CLAUDE_EFFORTS), default_effort='medium')
                     for m, n in [('fable', 'Fable'), ('opus', 'Opus'), ('sonnet', 'Sonnet'), ('haiku', 'Haiku')]]
         return []
 
@@ -388,6 +390,8 @@ class Manager:
         return {}
 
     def snapshot(self):
+        if not self.store.exists():
+            raise ValueError('Buzz를 설치하고 에이전트를 만든 뒤 새로고침하세요.')
         raw = self.store.read_bytes()
         records = json.loads(raw)
         accounts = self.accounts()
@@ -445,6 +449,26 @@ class Manager:
             data['accounts'].append(item)
             write_json(self.registry, data)
             return item
+
+    def update_account(self, identity, name, endpoint=None):
+        name = name.strip()
+        if not name or len(name) > 80:
+            raise ValueError('계정 이름은 1~80자로 입력하세요.')
+        with self.lock():
+            account = self.account(identity)
+            if account['builtin']:
+                raise ValueError('기본 계정은 수정할 수 없습니다. 새 계정을 추가하세요.')
+            if any(a['id'] != identity and a['provider'] == account['provider'] and a['name'] == name
+                   for a in self.accounts()):
+                raise ValueError('같은 서비스에 같은 이름의 계정이 있습니다.')
+            updated = dict(account, name=name)
+            if account['provider'] == 'ollama':
+                updated['endpoint'] = self.ollama_endpoint(endpoint if endpoint is not None else account['endpoint'])
+            data = read_json(self.registry)
+            data['accounts'] = [updated if a['id'] == identity else a for a in data['accounts']]
+            write_json(self.registry, data)
+            self._ollama_cache.clear()
+            return updated
 
     def delete_account(self, identity):
         with self.lock():
@@ -595,7 +619,8 @@ class Manager:
             if info.get('remote_host') or info.get('remote_model') or 'tools' not in info.get('capabilities', []):
                 raise ValueError('로컬 실행과 도구 호출을 지원하는 Ollama 모델을 선택하세요.')
         effort = req.get('effort', '')
-        if effort and effort not in ALL_EFFORTS:
+        allowed_efforts = CLAUDE_EFFORTS if a['provider'] == 'claude' else ALL_EFFORTS
+        if effort and effort not in allowed_efforts:
             raise ValueError('지원하지 않는 effort 값입니다.')
         known = next((m for m in self.models(a['provider'], a['home']) if m['id'] == model), None)
         if known and effort and effort not in known['efforts']:
@@ -651,8 +676,8 @@ class Manager:
             backups.mkdir(parents=True, mode=0o700)
             backups.parent.chmod(0o700)
             backend_copy = Path(__file__).read_bytes()
-            script = ('#!/bin/sh\nexec /usr/bin/python3 "' + str(self.root / 'manager-backend.py') +
-                      '" launch "' + slug + '" "$@"\n').encode()
+            script = ('#!/bin/sh\nexec ' + shlex.join([sys.executable, str(self.root / 'manager-backend.py'),
+                                                    'launch', slug]) + ' "$@"\n').encode()
             updates = [(self.root / 'manager-backend.py', backend_copy, 0o700),
                        (self.root / (slug + '.json'), (json.dumps(profile, ensure_ascii=False, indent=2) + '\n').encode(), 0o600),
                        (launcher, script, 0o700),
@@ -745,7 +770,7 @@ class Manager:
             atomic_bytes(destination, content, 0o700)
         label = 'kr.co.astravision.buzz-account-monitor'
         path = self.home / 'Library/LaunchAgents' / (label + '.plist')
-        config = dict(Label=label, ProgramArguments=['/usr/bin/python3', str(destination), 'monitor'],
+        config = dict(Label=label, ProgramArguments=[sys.executable, str(destination), 'monitor'],
                       StartInterval=300, RunAtLoad=True, ProcessType='Background')
         desired = plistlib.dumps(config)
         changed = not path.exists() or path.read_bytes() != desired
@@ -895,7 +920,7 @@ class Manager:
 def main():
     manager = Manager()
     action = sys.argv[1]
-    req = json.load(sys.stdin) if action in ('create', 'delete', 'apply', 'validate', 'usage') else {}
+    req = json.load(sys.stdin) if action in ('create', 'update', 'delete', 'apply', 'validate', 'usage') else {}
     if action == 'install-monitor':
         result = manager.install_monitor()
     elif action == 'monitor':
@@ -906,6 +931,8 @@ def main():
         result = manager.usage(req['account_id'])
     elif action == 'create':
         result = manager.create_account(req['name'], req['provider'], req.get('endpoint'))
+    elif action == 'update':
+        result = manager.update_account(req['account_id'], req['name'], req.get('endpoint'))
     elif action == 'delete':
         result = manager.delete_account(req['account_id'])
     elif action == 'validate':
