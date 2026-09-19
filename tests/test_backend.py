@@ -52,6 +52,11 @@ class ManagerTests(unittest.TestCase):
         self.assertTrue(Path(updated[1]['acp_command']).exists())
         for f in self.manager.root.glob('backups/*/*'):
             self.assertEqual(f.stat().st_mode & 0o777, 0o600)
+    @unittest.skipIf(os.name == 'nt', 'posix launcher')
+    def test_launcher_pins_python_that_cannot_move(self):
+        self.manager.apply(self.request())
+        launcher = Path(b.read_json(self.manager.store)[1]['acp_command']).read_text()
+        self.assertIn('exec /usr/bin/python3 ', launcher)
     def test_no_writes_when_buzz_running(self):
         before = self.manager.store.read_bytes()
         with patch.object(b.Manager, 'buzz_running', return_value=True):

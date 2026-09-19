@@ -35,6 +35,8 @@ The downloadable build targets **Apple Silicon, macOS 14 or later**. You also ne
 3. Open the app. Select **Subscription accounts → Add account**, then sign in.
 4. Select an agent, choose its account, model, and effort, then click **Save settings**.
 
+**Windows:** a preview installer lives in [`windows/`](windows/README.md). It is not released yet and has not been verified on a Windows machine.
+
 The build is ad-hoc signed and **not Apple-notarized**. If macOS blocks it, review the app in System Settings → Privacy & Security, or build from source. No subscription credentials are included in the download.
 
 ## Automatic account switching

@@ -14,7 +14,22 @@ xcode-select -p           # 경로가 나오면 Command Line Tools가 있습니�
 - **macOS 14.0 이상**입니다. 앱 번들의 `LSMinimumSystemVersion`이 14.0이라 그 아래에서는 실행되지 않습니다.
 - **Xcode Command Line Tools가 필요합니다.** 빌드에 `xcrun swiftc`를 쓰고, 앱이 백엔드를 실행할 때 쓰는
   `/usr/bin/python3`도 Tools가 없으면 설치 창부터 띄웁니다. 없으면 `xcode-select --install`로 먼저 까세요.
-  전체 Xcode는 필요 없습니다.
+- **macOS 27에서는 전체 Xcode까지 필요합니다.** 그 세대 SDK에서는 SwiftUI의 `@State`가 프로퍼티
+  래퍼가 아니라 매크로입니다. 컴파일에 `libSwiftUIMacros.dylib` 플러그인이 있어야 하는데 Command Line
+  Tools에는 이게 없어서, `./build.sh`가 `external macro implementation type 'SwiftUIMacros.StateMacro'
+  could not be found` 에러 92개로 멈춥니다(macOS 27 + CLT 27 실측. 26도 같은 SDK 세대라 같을 겁니다).
+  macOS 14·15에서는 Tools만으로 빌드됩니다. 미리 확인하려면:
+
+  ```bash
+  ls /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/   # SwiftUIMacros가 보이면 그대로 진행
+  ```
+
+  안 보이면 App Store에서 Xcode를 깔고 두 줄을 실행하세요. 라이선스 동의는 사람이 직접 해야 합니다.
+
+  ```bash
+  sudo xcodebuild -license accept
+  sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+  ```
 - **Python은 3.9 이상**이면 됩니다. 앱이 `/opt/homebrew/bin/python3` → `/usr/local/bin/python3` →
   Command Line Tools → `/usr/bin/python3` 순으로 실행되는 첫 Python을 고릅니다. macOS 14의
   `/usr/bin/python3`가 3.9.6이라 따로 깔 건 없습니다.
