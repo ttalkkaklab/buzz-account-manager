@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Local storage and process boundary for Buzz Account Manager. No model API calls."""
 from __future__ import annotations
+import os
 import contextlib
 import datetime
-import fcntl
+if os.name == "nt":
+    import windows_support as win
+    fcntl = win
+else:
+    import fcntl
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import shutil
@@ -54,7 +58,7 @@ def atomic_bytes(path, data, mode=0o600):
     fd, temp = tempfile.mkstemp(prefix='.' + path.name, dir=path.parent)
     try:
         with os.fdopen(fd, 'wb') as f:
-            os.fchmod(f.fileno(), mode)
+            os.chmod(temp, mode) if os.name == "nt" else os.fchmod(f.fileno(), mode)
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
@@ -98,11 +102,16 @@ class CodexRPC:
     """A short-lived, account-scoped app server. Never starts a model turn."""
     def __init__(self, command, env):
         self.process = subprocess.Popen(
-            [command, 'app-server', '--stdio', '-c', 'cli_auth_credentials_store="file"'],
+            (win.cli_command([command, 'app-server', '--stdio', '-c', 'cli_auth_credentials_store="file"']) if os.name == 'nt' else
+             [command, 'app-server', '--stdio', '-c', 'cli_auth_credentials_store="file"']),
             env=env, cwd=env['HOME'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL)
-        self.selector = selectors.DefaultSelector()
-        self.selector.register(self.process.stdout, selectors.EVENT_READ)
+        if os.name == 'nt':
+            self.reader = win.PipeReader(self.process.stdout)
+            self.selector = None
+        else:
+            self.selector = selectors.DefaultSelector()
+            self.selector.register(self.process.stdout, selectors.EVENT_READ)
         self.buffer = b''
         self.sequence = 0
         self.pending = []
@@ -117,6 +126,8 @@ class CodexRPC:
         self.process.stdin.flush()
 
     def receive(self, deadline):
+        if self.selector is None:
+            return json.loads(self.reader.receive(deadline))
         while b'\n' not in self.buffer:
             if time.monotonic() >= deadline:
                 raise TimeoutError()
@@ -154,7 +165,8 @@ class CodexRPC:
             raise
 
     def close(self):
-        self.selector.close()
+        if self.selector is not None:
+            self.selector.close()
         if self.process.poll() is None:
             self.process.terminate()
             try:
@@ -245,7 +257,8 @@ class Manager:
         self.root = self.home / '.config/buzz-agents'
         self.registry = self.root / 'account-manager.json'
         self._ollama_cache = {}
-        self.store = self.home / 'Library/Application Support/xyz.block.buzz.app/agents/managed-agents.json'
+        self.store = (win.store_path(self.home) if os.name == 'nt' else
+                      self.home / 'Library/Application Support/xyz.block.buzz.app/agents/managed-agents.json')
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.root.chmod(0o700)
 
@@ -260,9 +273,9 @@ class Manager:
 
     def accounts(self):
         data = read_json(self.registry, {'version': 1, 'accounts': []})
-        defaults = [dict(id='default-' + p, name='이 Mac 기본 계정', provider=p,
+        defaults = [dict(id='default-' + p, name=('이 컴퓨터 기본 계정' if os.name == 'nt' else '이 Mac 기본 계정'), provider=p,
                          home=str(self.home / ('.' + p)), builtin=True) for p in PROVIDERS if p != 'ollama']
-        defaults.append(dict(id='default-ollama', name='이 Mac의 Ollama', provider='ollama',
+        defaults.append(dict(id='default-ollama', name=('이 컴퓨터의 Ollama' if os.name == 'nt' else '이 Mac의 Ollama'), provider='ollama',
                              home=str(self.root / 'ollama/default'), builtin=True, endpoint='http://127.0.0.1:11434'))
         return defaults + data['accounts']
 
@@ -273,6 +286,8 @@ class Manager:
         raise ValueError('계정이 없습니다. 새로고침해 주세요.')
 
     def executable_path(self):
+        if os.name == "nt":
+            return win.executable_path(self.home)
         folders = [self.home / '.local/bin', self.home / 'Library/Application Support/Buzz/node-tools/bin',
                    self.home / '.npm-global/bin', self.home / '.bun/bin', self.home / 'bin',
                    Path('/opt/homebrew/bin'), Path('/usr/local/bin'), Path('/usr/bin'), Path('/bin'),
@@ -386,7 +401,7 @@ class Manager:
         # Accept only launch scripts in our own directory, never arbitrary paths from the store.
         command = Path(record.get('acp_command') or '')
         if command.parent == self.root and command.name.startswith('launch-'):
-            return read_json(self.root / (command.name[7:] + '.json'), {})
+            return read_json(self.root / (command.name[7:].removesuffix('.exe') + '.json'), {})
         return {}
 
     def snapshot(self):
@@ -598,6 +613,8 @@ class Manager:
 
     @staticmethod
     def buzz_running():
+        if os.name == 'nt':
+            return win.buzz_running()
         text = subprocess.check_output(['/bin/ps', '-axo', 'comm='], text=True)
         return any(line.strip().endswith('/Buzz.app/Contents/MacOS/buzz-desktop') for line in text.splitlines())
 
@@ -627,6 +644,10 @@ class Manager:
             raise ValueError('선택한 모델이 지원하는 effort를 선택하세요.')
         self.validate_fallback(req)
         self.resolve_cli(CLI_COMMAND[a['provider']])
+        if os.name == 'nt':
+            win.buzz_binary('buzz-acp')
+            if a['provider'] in ('codex', 'ollama'):
+                win.buzz_binary('buzz-dev-mcp')
         return a
 
     def apply(self, req):
@@ -650,7 +671,7 @@ class Manager:
             slug = 'agent-' + target['pubkey']
             if not re.fullmatch(r'agent-[a-f0-9]{64}', slug):
                 raise ValueError('에이전트 공개키 형식을 확인하세요.')
-            launcher = self.root / ('launch-' + slug)
+            launcher = self.root / ('launch-' + slug + ('.exe' if os.name == 'nt' else ''))
             provider = req['provider']
             runtime = 'claude' if provider == 'ollama' else provider
             for r in targets:
@@ -682,6 +703,11 @@ class Manager:
                        (self.root / (slug + '.json'), (json.dumps(profile, ensure_ascii=False, indent=2) + '\n').encode(), 0o600),
                        (launcher, script, 0o700),
                        (self.store, (json.dumps(records, ensure_ascii=False, indent=2) + '\n').encode(), 0o600)]
+            if os.name == 'nt':
+                updates = [(p, win.launcher_bytes() if p == launcher else data, mode)
+                           for p, data, mode in updates]
+                updates += [(self.root / 'windows_support.py', Path(win.__file__).read_bytes(), 0o600),
+                            (self.root / 'installation.txt', str(win.installation_dir()).encode('utf-8'), 0o600)]
             originals = []
             for i, (path, _, _) in enumerate(updates):
                 old = path.read_bytes() if path.exists() else None
@@ -764,6 +790,8 @@ class Manager:
         return 'limited' if min(valid) <= 0 else 'available'
 
     def install_monitor(self):
+        if os.name == 'nt':
+            return win.install_monitor(self.home)
         destination = self.root / 'monitor-backend.py'
         content = Path(__file__).read_bytes()
         if not destination.exists() or destination.read_bytes() != content:
@@ -823,14 +851,17 @@ class Manager:
                     continue
                 profile['account_ids'][provider] = chosen
                 profile['fallback_ids'][provider] = [current if x == chosen else x for x in candidates]
-                path = Path(r['acp_command']).with_name(Path(r['acp_command']).name[7:] + '.json')
+                path = Path(r['acp_command']).with_name(Path(r['acp_command']).name[7:].removesuffix('.exe') + '.json')
                 changes.append((path, profile, path.read_bytes()))
                 state['events'].append(r['name'] + ': 예비 계정으로 전환했습니다.')
             running = self.buzz_running() if changes else False
             stopped = False
             try:
                 if running:
-                    subprocess.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e',
+                    if os.name == 'nt':
+                        win.stop_buzz()
+                    else:
+                        subprocess.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e',
                                     'ObjC.import("AppKit"); var apps = $.NSRunningApplication.runningApplicationsWithBundleIdentifier("xyz.block.buzz.app"); for (var i = 0; i < apps.count; i++) { apps.objectAtIndex(i).terminate; }'],
                                    capture_output=True, check=True, timeout=15)
                     for _ in range(100):
@@ -867,6 +898,8 @@ class Manager:
         if not env.get('BUZZ_PRIVATE_KEY'):
             raise ValueError('Buzz가 전달한 에이전트 신원이 없습니다.')
         basename = Path(env.get('BUZZ_ACP_AGENT_COMMAND', '')).name
+        if os.name == 'nt':
+            basename = win.adapter_name(basename)
         provider = {'codex-acp': 'codex', 'claude-agent-acp': 'claude', 'claude-code-acp': 'claude',
                     'grok': 'grok', 'grok-creator': 'grok'}.get(basename)
         if not provider:
@@ -887,7 +920,7 @@ class Manager:
             if not model:
                 raise ValueError('Ollama 모델이 지정되지 않았습니다. 모델을 선택하고 저장하세요.')
             env['BUZZ_ACP_MODEL'] = model
-            env['BUZZ_ACP_MCP_COMMAND'] = env.get('BUZZ_ACP_MCP_COMMAND') or '/Applications/Buzz.app/Contents/MacOS/buzz-dev-mcp'
+            env['BUZZ_ACP_MCP_COMMAND'] = env.get('BUZZ_ACP_MCP_COMMAND') or (str(win.buzz_binary('buzz-dev-mcp')) if os.name == 'nt' else '/Applications/Buzz.app/Contents/MacOS/buzz-dev-mcp')
             env['ENABLE_TOOL_SEARCH'] = 'false'
             for key in ('ANTHROPIC_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_SMALL_FAST_MODEL', 'ANTHROPIC_DEFAULT_FABLE_MODEL'):
                 env[key] = model
@@ -914,6 +947,9 @@ class Manager:
         harness = self.home / '.buzz/bin/buzz-acp-persistent'
         if not harness.exists():
             harness = Path('/Applications/Buzz.app/Contents/MacOS/buzz-acp')
+        if os.name == 'nt':
+            harness = win.buzz_binary('buzz-acp')
+            raise SystemExit(win.run_cli([str(harness), *extra], env))
         os.execve(str(harness), [str(harness), *extra], env)
 
 
@@ -949,6 +985,8 @@ def main():
             signal.signal(signal.SIGTERM, stop_login)
             return manager.codex_login(sys.argv[2])
         command, env = manager.login_plan(sys.argv[2])
+        if os.name == 'nt':
+            raise SystemExit(win.run_cli(command, env))
         os.execve(command[0], command, env)
     else:
         raise ValueError('지원하지 않는 명령입니다.')
