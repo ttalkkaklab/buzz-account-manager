@@ -30,6 +30,9 @@ import urllib.request
 import urllib.error
 import urllib.parse
 
+# Baked into generated launchers and the monitor LaunchAgent. On macOS sys.executable points at a
+# Homebrew or Command Line Tools python; both move on upgrade. /usr/bin/python3 is a stable OS shim.
+LAUNCH_PYTHON = sys.executable if os.name == 'nt' else '/usr/bin/python3'
 PROVIDERS = ('codex', 'claude', 'grok', 'ollama')
 CLI_COMMAND = {'codex': 'codex-acp', 'claude': 'claude-agent-acp', 'grok': 'grok', 'ollama': 'claude-agent-acp'}
 ALL_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max', 'ultra')
@@ -697,7 +700,7 @@ class Manager:
             backups.mkdir(parents=True, mode=0o700)
             backups.parent.chmod(0o700)
             backend_copy = Path(__file__).read_bytes()
-            script = ('#!/bin/sh\nexec ' + shlex.join([sys.executable, str(self.root / 'manager-backend.py'),
+            script = ('#!/bin/sh\nexec ' + shlex.join([LAUNCH_PYTHON, str(self.root / 'manager-backend.py'),
                                                     'launch', slug]) + ' "$@"\n').encode()
             updates = [(self.root / 'manager-backend.py', backend_copy, 0o700),
                        (self.root / (slug + '.json'), (json.dumps(profile, ensure_ascii=False, indent=2) + '\n').encode(), 0o600),
@@ -798,7 +801,7 @@ class Manager:
             atomic_bytes(destination, content, 0o700)
         label = 'kr.co.astravision.buzz-account-monitor'
         path = self.home / 'Library/LaunchAgents' / (label + '.plist')
-        config = dict(Label=label, ProgramArguments=[sys.executable, str(destination), 'monitor'],
+        config = dict(Label=label, ProgramArguments=[LAUNCH_PYTHON, str(destination), 'monitor'],
                       StartInterval=300, RunAtLoad=True, ProcessType='Background')
         desired = plistlib.dumps(config)
         changed = not path.exists() or path.read_bytes() != desired
