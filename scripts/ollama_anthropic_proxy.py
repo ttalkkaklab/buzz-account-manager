@@ -8,18 +8,41 @@ import urllib.request
 UPSTREAM = 'http://127.0.0.1:11435'
 
 def normalize(body):
-    extra = [m for m in body.get('messages', []) if m.get('role') == 'system']
-    if not extra:
+    # ACP appends system messages after the user turn. Normalize those first.
+    messages = body.get('messages', [])
+    extra = [m for m in messages if m.get('role') == 'system']
+    if extra:
+        system = body.get('system') or []
+        system = [{'type': 'text', 'text': system}] if isinstance(system, str) else list(system)
+        for message in extra:
+            content = message.get('content', [])
+            system.extend([{'type': 'text', 'text': content}] if isinstance(content, str) else content)
+        messages = [m for m in messages if m.get('role') != 'system']
+        body = dict(body, system=system, messages=messages)
+
+    tools = {tool.get('name') for tool in body.get('tools', [])}
+    shell = next((name for name in ('mcp__buzz__shell', 'Bash') if name in tools), None)
+    if not shell or not messages or messages[-1].get('role') != 'user':
         return body
-    system = body.get('system') or []
-    if isinstance(system, str):
-        system = [{'type': 'text', 'text': system}]
-    else:
-        system = list(system)
-    for message in extra:
-        content = message.get('content', [])
-        system.extend([{'type': 'text', 'text': content}] if isinstance(content, str) else content)
-    return dict(body, system=system, messages=[m for m in body['messages'] if m.get('role') != 'system'])
+    content = messages[-1].get('content', [])
+    blocks = [{'type': 'text', 'text': content}] if isinstance(content, str) else list(content)
+    # A tool result is a continuation, not a new delivery request.
+    if any(c.get('type') == 'tool_result' for c in blocks):
+        return body
+    text = '\n'.join(c.get('text', '') for c in blocks if c.get('type') == 'text')
+    marker = 'Buzz delivery requirement:'
+    if '<buzz-event ' not in text or marker in text:
+        return body
+    instruction = (f'{marker} Your final text is private and will NOT appear in the channel. '
+        f'For a reply to this event, use the {shell} tool with its command argument to run '
+        '/Applications/Buzz.app/Contents/MacOS/buzz messages send '
+        '--channel CHANNEL_UUID --reply-to TRIGGER_EVENT_ID --content "your reply", '
+        'using the channel and triggering event ID from the buzz-event. '
+        'Execute the tool and check accepted=true before claiming delivery. '
+        'Do not merely print the command or end with an unsent reply. '
+        'Send once; if delivery fails, report the error honestly.')
+    blocks.append({'type': 'text', 'text': instruction})
+    return dict(body, messages=messages[:-1] + [dict(messages[-1], content=blocks)])
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
