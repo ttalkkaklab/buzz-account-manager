@@ -6,6 +6,8 @@
 
 macOS 14 이상과 Apple Silicon용 배포본입니다. Buzz Desktop과 사용할 서비스의 CLI·ACP 어댑터가 필요합니다. ZIP을 풀고 앱을 `~/Applications`에 옮기세요. `/usr/bin/python3`를 사용하므로 Xcode Command Line Tools도 필요합니다. 배포본은 ad-hoc 서명만 포함하며 Apple 공증은 받지 않았습니다. macOS가 실행을 막으면 시스템 설정의 개인정보 보호 및 보안에서 앱을 확인하거나 소스로 빌드하세요.
 
+**Windows는 미리보기입니다.** 설치 프로그램과 사용법은 [`windows/`](windows/README.md)에 있습니다. 아직 배포본이 없고 Windows 실기 검증도 하지 않았습니다.
+
 이 프로젝트는 Buzz용 독립 도구입니다. Buzz와 각 AI 서비스 개발사의 공식 앱이 아닙니다.
 
 각 Mac의 Buzz 에이전트마다 구독 계정·모델·effort를 선택하는 macOS 앱입니다.
