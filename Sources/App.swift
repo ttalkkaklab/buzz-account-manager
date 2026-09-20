@@ -34,6 +34,8 @@ struct Account: Codable, Identifiable {
     var ready: Bool
     var models: [ModelChoice]
     var endpoint: String? = nil
+    var isLocalCodex: Bool { provider == "codex" && !(endpoint ?? "").isEmpty }
+    var isServer: Bool { provider == "ollama" || isLocalCodex }
 }
 struct Agent: Codable, Identifiable {
     var id: String
@@ -223,14 +225,14 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
             accountSheet = false
             await refresh()
             if let id = object?["id"] as? String, let a = snapshot?.accounts.first(where: { $0.id == id }) {
-                if provider == "ollama" { selection = "accounts"; await refreshUsage(a.id) }
+                if a.isServer { selection = "accounts"; await refreshUsage(a.id) }
                 else { startLogin(a) }
             }
         } catch { self.error = error.localizedDescription }
         busy = false
     }
     func startLogin(_ account: Account) {
-        guard !loginRunning, account.provider != "ollama" else { return }
+        guard !loginRunning, !account.isServer else { return }
         loginAccount = account
         usageGeneration[account.id, default: 0] += 1
         usage.removeValue(forKey: account.id)
@@ -491,7 +493,8 @@ struct AgentEditor: View {
                         }.labelsHidden().controlSize(.large)
                             .onChange(of: accountID) { _, _ in
                                 fallbackIDs = fallbackIDs.map { $0 == accountID ? "" : $0 }
-                                if provider == "ollama" || (!customModel && !choices.contains(where: { $0.id == model })) {
+                                if account?.isLocalCodex == true { fallbackIDs = ["", "", ""]; autoFallback = false }
+                                if account?.isServer == true || (!customModel && !choices.contains(where: { $0.id == model })) {
                                     model = choices.first?.id ?? ""
                                     effort = choices.first?.default_effort ?? ""
                                     customModel = false
@@ -500,23 +503,23 @@ struct AgentEditor: View {
                         Button { app.accountSheet = true } label: { Label(L("계정 추가"), systemImage: "plus") }
                     }
                     if let account = account {
-                        Label(provider == "ollama" ? (account.ready ? L("Ollama 서버에 연결됐습니다.") : L("Ollama 서버를 실행하거나 서버 주소를 추가하세요.")) : (account.ready ? L("저장된 로그인 정보가 있습니다.") : L("계정 탭에서 먼저 로그인하세요.")),
+                        Label(account.isServer ? (account.ready ? L("서버 연결됨") : L("서버 연결 필요")) : (account.ready ? L("저장된 로그인 정보가 있습니다.") : L("계정 탭에서 먼저 로그인하세요.")),
                               systemImage: account.ready ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark")
                             .font(.caption).foregroundStyle(account.ready ? Color.secondary : Color.orange)
                     }
-                    if provider == "ollama" {
+                    if account?.isServer == true {
                         Text(account?.endpoint ?? "http://127.0.0.1:11434").font(.caption).foregroundStyle(.secondary)
                         Text(L("도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 왼쪽 아래 새로고침을 누르세요."))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Divider()
-                    if provider == "codex" || provider == "claude" {
+                    if (provider == "codex" || provider == "claude") && account?.isLocalCodex != true {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(L("예비 구독 계정 · 최대 3개")).font(.headline)
                             ForEach(0..<3, id: \.self) { index in
                                 Picker(L("예비 {0}", String(describing: index + 1)), selection: $fallbackIDs[index]) {
                                     Text(L("선택 안 함")).tag("")
-                                    ForEach(accounts.filter { $0.id != accountID && (!fallbackIDs.contains($0.id) || fallbackIDs[index] == $0.id) }) { item in
+                                    ForEach(accounts.filter { !$0.isLocalCodex && $0.id != accountID && (!fallbackIDs.contains($0.id) || fallbackIDs[index] == $0.id) }) { item in
                                         Text((item.builtin ? L(item.name) : item.name) + (item.ready ? "" : L(" · 로그인 필요"))).tag(item.id)
                                     }
                                 }
@@ -561,7 +564,7 @@ struct AgentEditor: View {
                         Text(L("모델 기본값")).tag("")
                         ForEach(efforts, id: \.self) { Text($0).tag($0) }
                     }.pickerStyle(.segmented).labelsHidden()
-                    Text(provider == "ollama" ? L("Ollama는 모델의 기본 추론 설정을 사용합니다. 구독 계정의 사용량은 차감하지 않습니다.") : L("높을수록 더 오래 생각하며 구독 사용량이 늘 수 있습니다. 지원 범위는 모델마다 다릅니다."))
+                    Text(account?.isLocalCodex == true ? L("로컬 모델에는 Codex·Claude 구독 잔량이 적용되지 않습니다.") : provider == "ollama" ? L("Ollama는 모델의 기본 추론 설정을 사용합니다. 구독 계정의 사용량은 차감하지 않습니다.") : L("높을수록 더 오래 생각하며 구독 사용량이 늘 수 있습니다. 지원 범위는 모델마다 다릅니다."))
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(24)
@@ -622,13 +625,13 @@ struct AccountsView: View {
                                     .font(.title2).foregroundStyle(.secondary).frame(width: 32)
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(account.builtin ? L(account.name) : account.name).font(.headline)
-                                    Text(account.provider == "ollama" ? (account.ready ? L("서버 연결됨") : L("서버 연결 필요")) : (account.ready ? L("로그인 정보 있음") : L("로그인 필요")))
+                                    Text(account.isServer ? (account.ready ? L("서버 연결됨") : L("서버 연결 필요")) : (account.ready ? L("로그인 정보 있음") : L("로그인 필요")))
                                         .font(.caption).foregroundStyle(account.ready ? Color.secondary : Color.orange)
                                     Text(account.endpoint ?? account.home.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                                         .font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled)
                                 }
                                 Spacer()
-                                if account.provider == "ollama" {
+                                if account.isServer {
                                     Button(L("연결 확인")) { Task { await app.refresh(); await app.refreshUsage(account.id) } }.disabled(app.busy)
                                 } else if !account.builtin {
                                     Button(account.ready ? L("다시 로그인") : L("로그인")) { app.startLogin(account) }.disabled(app.loginRunning)
@@ -723,6 +726,9 @@ struct AddAccountView: View {
     @State var name = ""
     @State var provider = "codex"
     @State var endpoint = "http://127.0.0.1:11434"
+    @State var localCodex = false
+    @State var codexEndpoint = "http://127.0.0.1:11235"
+    var serverAccount: Bool { provider == "ollama" || (provider == "codex" && localCodex) }
     var body: some View {
         let _ = displayLocale
         VStack(alignment: .leading, spacing: 22) {
@@ -732,6 +738,13 @@ struct AddAccountView: View {
                 ForEach(["codex", "claude", "grok", "ollama"], id: \.self) { Text(providerName($0)).tag($0) }
             }.pickerStyle(.segmented)
             TextField(L("예: 개인 Pro, 업무 계정"), text: $name).textFieldStyle(.roundedBorder).controlSize(.large)
+            if provider == "codex" {
+                Toggle(L("로컬 OpenAI 호환 서버"), isOn: $localCodex)
+                if localCodex {
+                    TextField(L("서버 주소"), text: $codexEndpoint).textFieldStyle(.roundedBorder)
+                    Text(L("Responses API와 도구 호출을 지원하는 서버가 필요합니다. 로그인 없이 연결합니다.")).font(.caption).foregroundStyle(.secondary)
+                }
+            }
             if provider == "ollama" {
                 TextField(L("Ollama 서버 주소"), text: $endpoint).textFieldStyle(.roundedBorder)
                 Text(L("예: http://127.0.0.1:11434 또는 맥미니의 서버 주소. 로그인과 모델 다운로드 없이 연결만 등록합니다.")).font(.caption).foregroundStyle(.secondary)
@@ -740,9 +753,9 @@ struct AddAccountView: View {
             HStack {
                 Button(L("취소")) { app.accountSheet = false }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button(provider == "ollama" ? L("서버 추가") : L("추가하고 로그인")) { Task { await app.create(name: name, provider: provider, endpoint: endpoint) } }
+                Button(serverAccount ? L("서버 추가") : L("추가하고 로그인")) { Task { await app.create(name: name, provider: provider, endpoint: provider == "ollama" ? endpoint : (localCodex && provider == "codex" ? codexEndpoint : "")) } }
                     .buttonStyle(.borderedProminent).tint(.teal)
-                    .disabled(app.busy || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(app.busy || name.trimmingCharacters(in: .whitespaces).isEmpty || (provider == "codex" && localCodex && codexEndpoint.trimmingCharacters(in: .whitespaces).isEmpty))
                     .keyboardShortcut(.defaultAction)
             }
         }.padding(30).frame(width: 550)

@@ -37,6 +37,105 @@ class ManagerTests(unittest.TestCase):
     def request(self):
         return dict(agent_id=self.pk, account_id='default-codex', provider='codex', model='test-model', effort='high',
                     revision=b.revision(self.manager.store.read_bytes()))
+    def test_local_codex_ready_validate_apply_without_tokens(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        import threading
+        requests = []
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append((self.path, self.headers.get('Authorization')))
+                self.send_response(200); self.end_headers()
+                self.wfile.write(b'{"data":[{"id":"local-model"}]}')
+            def log_message(self, *args): pass
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        try:
+            endpoint = 'http://127.0.0.1:' + str(server.server_port)
+            a = self.manager.create_account('Local', 'codex', endpoint + '/v1/', model_context_window=131072)
+            self.assertEqual(a['endpoint'], endpoint)
+            self.assertIn('model_context_window = 131072\n', (Path(a['home']) / 'config.toml').read_text())
+            self.assertFalse((Path(a['home']) / 'auth.json').exists())
+            self.assertTrue(self.manager.account_ready(a))
+            req = self.request(); req.update(account_id=a['id'], model='local-model')
+            self.manager.validate(req)
+            self.manager.apply(req)
+            records = b.read_json(self.manager.store)
+            self.assertEqual(records[1]['model'], 'local-model')
+            self.assertEqual(records[1]['effort_level'], 'high')
+            self.assertEqual(records[1]['mcp_command'], 'buzz-dev-mcp')
+            self.assertEqual(records[1]['pubkey'], self.pk)
+            self.assertEqual(records[2:], self.records[2:])
+            profile = b.read_json(self.manager.root / ('agent-' + self.pk + '.json'))
+            self.assertEqual(profile['account_ids']['codex'], a['id'])
+            env = dict(BUZZ_PRIVATE_KEY='identity', BUZZ_ACP_AGENT_COMMAND='codex-acp',
+                       BUZZ_ACP_MODEL='local-model', BUZZ_ACP_EFFORT_LEVEL='high',
+                       OPENAI_API_KEY='must-not-reach-local', CODEX_CONFIG='{"model_provider":"openai","model_context_window":32768}')
+            with patch.dict(os.environ, env, clear=True), patch.object(os, 'execve') as execute:
+                self.manager.launch('agent-' + self.pk, [])
+                runtime = execute.call_args.args[2]
+                config = json.loads(runtime['CODEX_CONFIG'])
+                self.assertEqual(runtime['CODEX_HOME'], a['home'])
+                self.assertNotIn('OPENAI_API_KEY', runtime)
+                self.assertEqual(config['model_provider'], 'local')
+                self.assertEqual(config['model_context_window'], 131072)
+                self.assertEqual(config['model'], 'local-model')
+                self.assertEqual(config['model_providers']['local']['base_url'], endpoint + '/v1')
+                self.assertFalse(config['model_providers']['local']['requires_openai_auth'])
+            for request in requests:
+                self.assertEqual(request, ('/v1/models', None))
+            before = self.manager.store.read_bytes()
+            req.update(model='not-installed', revision=b.revision(before))
+            with self.assertRaises(ValueError): self.manager.apply(req)
+            self.assertEqual(self.manager.store.read_bytes(), before)
+            with patch.object(b, 'CodexRPC', side_effect=AssertionError('cloud request')):
+                self.assertEqual(self.manager.usage(a['id'])['status'], 'unavailable')
+                with self.assertRaises(ValueError): self.manager.login_plan(a['id'])
+                with self.assertRaises(ValueError): self.manager.codex_login(a['id'])
+        finally:
+            server.shutdown(); server.server_close(); thread.join()
+
+    def test_local_codex_not_ready_and_catalog_validation(self):
+        import io
+        a = self.manager.create_account('Offline', 'codex', 'http://127.0.0.1:11235')
+        # A leftover subscription token cannot make an offline local server ready.
+        b.write_json(Path(a['home']) / 'auth.json', {'auth_mode':'chatgpt', 'tokens':{'access_token':'test'}})
+        for payload in (b'{}', b'[]', b'{"data":[{}]}', b'{"data":[{"id":12}]}', b'bad json'):
+            self.manager._local_codex_cache.clear()
+            with patch.object(b.urllib.request, 'build_opener') as opener:
+                opener.return_value.open.return_value = io.BytesIO(payload)
+                self.assertFalse(self.manager.account_ready(a))
+        self.manager._local_codex_cache.clear()
+        before = self.manager.store.read_bytes()
+        req = self.request(); req['account_id'] = a['id']
+        with patch.object(b.urllib.request, 'build_opener') as opener:
+            opener.return_value.open.side_effect = OSError('offline')
+            self.assertFalse(self.manager.account_ready(a))
+            with self.assertRaises(ValueError): self.manager.apply(req)
+        self.assertEqual(self.manager.store.read_bytes(), before)
+
+    def test_local_codex_context_validation(self):
+        for value in (True, 0, -1, 1.5, '131072'):
+            with self.assertRaises(ValueError):
+                self.manager.create_account('invalid', 'codex', 'http://localhost:11235', value)
+        with self.assertRaises(ValueError):
+            self.manager.create_account('subscription', 'codex', model_context_window=131072)
+        account = self.manager.create_account('Default context', 'codex', 'http://localhost:11235')
+        self.assertNotIn('model_context_window', account)
+        self.assertNotIn('model_context_window', self.manager.local_codex_config(account))
+        self.assertNotIn('model_context_window', (Path(account['home']) / 'config.toml').read_text())
+
+    def test_local_codex_endpoint_and_fallback_boundaries(self):
+        for endpoint in ('file:///tmp', 'http://user:secret@localhost', 'http://localhost?key=x',
+                         'http://localhost/v2', 'http://localhost:bad', 'http://localhost#secret'):
+            with self.assertRaises(ValueError): self.manager.create_account('invalid', 'codex', endpoint)
+        a = self.manager.create_account('Local', 'codex', 'http://localhost:11235')
+        req = self.request(); req.update(account_id=a['id'], fallback_ids=['default-codex'])
+        with self.assertRaises(ValueError): self.manager.validate_fallback(req)
+        req = self.request(); req['fallback_ids'] = [a['id']]
+        with self.assertRaises(ValueError): self.manager.validate_fallback(req)
+        self.assertTrue(self.manager.account_ready(self.manager.account('default-codex')))
+        self.assertNotIn('endpoint', self.manager.create_account('Subscription', 'codex'))
+
     def test_apply_preserves_other_agents_and_identity(self):
         self.manager.apply(self.request())
         updated = b.read_json(self.manager.store)
