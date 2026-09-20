@@ -6,6 +6,8 @@ Local accounts use `/v1/models` for readiness and model selection. They do not n
 
 An accessible model catalog does not prove that Responses API or tool calls work. Verify those with the intended model before switching an agent.
 
+The backend `create` request accepts an optional positive integer `model_context_window` for local Codex accounts. For the verified 20b server, use `131072`. It is saved in the account's root `config.toml` and pinned in the managed launcher's `CODEX_CONFIG`, overriding inherited context limits. Other local servers keep their default unless explicitly configured; do not assume that every server supports 128K. This sets the context limit, but does not supply missing model metadata: install a verified `model_catalog_json` separately when required.
+
 ## Verification without real accounts
 
 Run `./scripts/test.sh` and `BUZZ_INSTALL=0 ./build.sh`. The full test suite creates a temporary local HTTP server and a temporary account home, validates and applies an account without `auth.json`, and checks the launcher environment, identity preservation, unavailable servers, unknown models, and fallback boundaries. It does not modify actual agent accounts.

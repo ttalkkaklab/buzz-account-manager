@@ -382,10 +382,13 @@ class Manager:
         return self._local_codex_cache[endpoint]
 
     def local_codex_config(self, account):
-        return dict(model_provider='local', model_providers={'local': dict(
+        config = dict(model_provider='local', model_providers={'local': dict(
             name='Local OpenAI-compatible server',
             base_url=self.codex_endpoint(account['endpoint']) + '/v1',
             wire_api='responses', requires_openai_auth=False)})
+        if account.get('model_context_window') is not None:
+            config['model_context_window'] = account['model_context_window']
+        return config
 
     def account_ready(self, account):
         home = Path(account['home'])
@@ -491,7 +494,7 @@ class Manager:
                     accounts=public_accounts, monitor=read_json(self.root / 'monitor-state.json', {}),
                     cli_available={p: bool(shutil.which('claude-agent-acp' if p == 'ollama' else p, path=self.executable_path())) for p in PROVIDERS})
 
-    def create_account(self, name, provider, endpoint=None):
+    def create_account(self, name, provider, endpoint=None, model_context_window=None):
         if provider not in PROVIDERS:
             raise ValueError('지원하지 않는 서비스입니다.')
         name = name.strip()
@@ -502,6 +505,10 @@ class Manager:
             endpoint = self.ollama_endpoint(endpoint or 'http://127.0.0.1:11434')
         if provider == 'codex' and endpoint:
             endpoint = self.codex_endpoint(endpoint)
+        if model_context_window is not None:
+            if (provider != 'codex' or not endpoint or type(model_context_window) is not int
+                    or model_context_window <= 0):
+                raise ValueError('Local Codex context window must be a positive integer.')
         with self.lock():
             data = read_json(self.registry, {'version': 1, 'accounts': []})
             if any(a['provider'] == provider and a['name'] == name for a in self.accounts()):
@@ -513,9 +520,13 @@ class Manager:
             item = dict(id=identity, name=name, provider=provider, home=str(folder), builtin=False)
             if provider == 'ollama' or (provider == 'codex' and endpoint):
                 item['endpoint'] = endpoint
+            if model_context_window is not None:
+                item['model_context_window'] = model_context_window
             # A new profile gets no copied tokens, endpoints, or API billing settings.
             if provider == 'codex':
                 config = 'cli_auth_credentials_store = "file"\n'
+                if model_context_window is not None:
+                    config += f'model_context_window = {model_context_window}\n'
                 if self.is_local_codex(item):
                     config += ('model_provider = "local"\n\n[model_providers.local]\n'
                                'name = "Local OpenAI-compatible server"\n'
@@ -1047,7 +1058,7 @@ def main():
     elif action == 'usage':
         result = manager.usage(req['account_id'])
     elif action == 'create':
-        result = manager.create_account(req['name'], req['provider'], req.get('endpoint'))
+        result = manager.create_account(req['name'], req['provider'], req.get('endpoint'), req.get('model_context_window'))
     elif action == 'update':
         result = manager.update_account(req['account_id'], req['name'], req.get('endpoint'))
     elif action == 'delete':

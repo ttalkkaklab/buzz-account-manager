@@ -51,8 +51,9 @@ class ManagerTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
         try:
             endpoint = 'http://127.0.0.1:' + str(server.server_port)
-            a = self.manager.create_account('Local', 'codex', endpoint + '/v1/')
+            a = self.manager.create_account('Local', 'codex', endpoint + '/v1/', model_context_window=131072)
             self.assertEqual(a['endpoint'], endpoint)
+            self.assertIn('model_context_window = 131072\n', (Path(a['home']) / 'config.toml').read_text())
             self.assertFalse((Path(a['home']) / 'auth.json').exists())
             self.assertTrue(self.manager.account_ready(a))
             req = self.request(); req.update(account_id=a['id'], model='local-model')
@@ -68,7 +69,7 @@ class ManagerTests(unittest.TestCase):
             self.assertEqual(profile['account_ids']['codex'], a['id'])
             env = dict(BUZZ_PRIVATE_KEY='identity', BUZZ_ACP_AGENT_COMMAND='codex-acp',
                        BUZZ_ACP_MODEL='local-model', BUZZ_ACP_EFFORT_LEVEL='high',
-                       OPENAI_API_KEY='must-not-reach-local', CODEX_CONFIG='{"model_provider":"openai"}')
+                       OPENAI_API_KEY='must-not-reach-local', CODEX_CONFIG='{"model_provider":"openai","model_context_window":32768}')
             with patch.dict(os.environ, env, clear=True), patch.object(os, 'execve') as execute:
                 self.manager.launch('agent-' + self.pk, [])
                 runtime = execute.call_args.args[2]
@@ -76,6 +77,7 @@ class ManagerTests(unittest.TestCase):
                 self.assertEqual(runtime['CODEX_HOME'], a['home'])
                 self.assertNotIn('OPENAI_API_KEY', runtime)
                 self.assertEqual(config['model_provider'], 'local')
+                self.assertEqual(config['model_context_window'], 131072)
                 self.assertEqual(config['model'], 'local-model')
                 self.assertEqual(config['model_providers']['local']['base_url'], endpoint + '/v1')
                 self.assertFalse(config['model_providers']['local']['requires_openai_auth'])
@@ -110,6 +112,17 @@ class ManagerTests(unittest.TestCase):
             self.assertFalse(self.manager.account_ready(a))
             with self.assertRaises(ValueError): self.manager.apply(req)
         self.assertEqual(self.manager.store.read_bytes(), before)
+
+    def test_local_codex_context_validation(self):
+        for value in (True, 0, -1, 1.5, '131072'):
+            with self.assertRaises(ValueError):
+                self.manager.create_account('invalid', 'codex', 'http://localhost:11235', value)
+        with self.assertRaises(ValueError):
+            self.manager.create_account('subscription', 'codex', model_context_window=131072)
+        account = self.manager.create_account('Default context', 'codex', 'http://localhost:11235')
+        self.assertNotIn('model_context_window', account)
+        self.assertNotIn('model_context_window', self.manager.local_codex_config(account))
+        self.assertNotIn('model_context_window', (Path(account['home']) / 'config.toml').read_text())
 
     def test_local_codex_endpoint_and_fallback_boundaries(self):
         for endpoint in ('file:///tmp', 'http://user:secret@localhost', 'http://localhost?key=x',
