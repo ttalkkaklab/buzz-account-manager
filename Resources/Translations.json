@@ -726,5 +726,45 @@
   "Python 3.9 이상을 실행할 수 없습니다. Python 설치 상태를 확인하세요.": {
     "en": "Cannot run Python 3.9 or later. Check your Python installation.",
     "vi": "Không thể chạy Python 3.9 trở lên. Hãy kiểm tra cài đặt Python."
+  },
+  "로컬 OpenAI 호환 서버": {
+    "en": "Local OpenAI-compatible server",
+    "vi": "Máy chủ cục bộ tương thích OpenAI"
+  },
+  "서버 주소": {
+    "en": "Server address",
+    "vi": "Địa chỉ máy chủ"
+  },
+  "Responses API와 도구 호출을 지원하는 서버가 필요합니다. 로그인 없이 연결합니다.": {
+    "en": "Requires a server supporting the Responses API and tool calls. No sign-in is needed.",
+    "vi": "Cần máy chủ hỗ trợ Responses API và gọi công cụ. Không cần đăng nhập."
+  },
+  "로컬 Codex 주소는 http://호스트:포트 또는 /v1 형식으로 입력하세요.": {
+    "en": "Enter a local Codex URL as http://host:port, optionally ending in /v1.",
+    "vi": "Nhập URL Codex cục bộ dạng http://host:port, có thể kết thúc bằng /v1."
+  },
+  "로컬 Codex 서버 포트를 확인하세요.": {
+    "en": "Check the local Codex server port.",
+    "vi": "Kiểm tra cổng máy chủ Codex cục bộ."
+  },
+  "Codex 서버 주소를 바꾸려면 새 로컬 계정을 추가하세요.": {
+    "en": "Add a new local account to change the Codex server address.",
+    "vi": "Thêm tài khoản cục bộ mới để đổi địa chỉ máy chủ Codex."
+  },
+  "로컬 Codex는 로그인 없이 서버에 연결합니다.": {
+    "en": "Local Codex connects without signing in.",
+    "vi": "Codex cục bộ kết nối mà không cần đăng nhập."
+  },
+  "로컬 Codex 서버에 연결하지 못했습니다. 서버 주소와 실행 상태를 확인하세요.": {
+    "en": "Could not connect to the local Codex server. Check its address and running status.",
+    "vi": "Không thể kết nối máy chủ Codex cục bộ. Kiểm tra địa chỉ và trạng thái hoạt động."
+  },
+  "서버에 설치된 로컬 모델을 선택하세요.": {
+    "en": "Select a local model installed on the server.",
+    "vi": "Chọn mô hình cục bộ đã cài trên máy chủ."
+  },
+  "로컬 Codex 계정에는 구독 계정 자동 전환을 설정할 수 없습니다.": {
+    "en": "Local Codex accounts cannot use automatic subscription account switching.",
+    "vi": "Tài khoản Codex cục bộ không hỗ trợ tự động chuyển tài khoản thuê bao."
   }
 }

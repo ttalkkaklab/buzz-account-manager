@@ -260,6 +260,7 @@ class Manager:
         self.root = self.home / '.config/buzz-agents'
         self.registry = self.root / 'account-manager.json'
         self._ollama_cache = {}
+        self._local_codex_cache = {}
         self.store = (win.store_path(self.home) if os.name == 'nt' else
                       self.home / 'Library/Application Support/xyz.block.buzz.app/agents/managed-agents.json')
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -344,12 +345,56 @@ class Manager:
             result.append(dict(id=name, name=name, efforts=[], default_effort=''))
         return result
 
+    @staticmethod
+    def is_local_codex(account):
+        return account['provider'] == 'codex' and bool(account.get('endpoint'))
+
+    @staticmethod
+    def codex_endpoint(value):
+        value = value.strip().rstrip('/')
+        parsed = urllib.parse.urlsplit(value)
+        if (parsed.scheme not in ('http', 'https') or not parsed.hostname
+                or parsed.username or parsed.password or parsed.query or parsed.fragment
+                or parsed.path not in ('', '/v1')):
+            raise ValueError('로컬 Codex 주소는 http://호스트:포트 또는 /v1 형식으로 입력하세요.')
+        try:
+            parsed.port
+        except ValueError:
+            raise ValueError('로컬 Codex 서버 포트를 확인하세요.')
+        return value[:-3] if parsed.path == '/v1' else value
+
+    def local_codex_catalog(self, account):
+        endpoint = self.codex_endpoint(account['endpoint'])
+        if endpoint not in self._local_codex_cache:
+            try:
+                request = urllib.request.Request(endpoint + '/v1/models')
+                # No provider credentials, proxy credentials, or redirects on this probe.
+                opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+                with opener.open(request, timeout=3) as response:
+                    catalog = json.load(response)
+                rows = catalog.get('data') if isinstance(catalog, dict) else None
+                if not isinstance(rows, list) or any(not isinstance(row, dict)
+                        or not isinstance(row.get('id'), str) or not row['id'].strip() for row in rows):
+                    raise ValueError('invalid model catalog')
+                self._local_codex_cache[endpoint] = rows
+            except Exception:
+                self._local_codex_cache[endpoint] = None
+        return self._local_codex_cache[endpoint]
+
+    def local_codex_config(self, account):
+        return dict(model_provider='local', model_providers={'local': dict(
+            name='Local OpenAI-compatible server',
+            base_url=self.codex_endpoint(account['endpoint']) + '/v1',
+            wire_api='responses', requires_openai_auth=False)})
+
     def account_ready(self, account):
         home = Path(account['home'])
         provider = account['provider']
         try:
             if provider == 'ollama':
                 return self.ollama_catalog(account) is not None
+            if self.is_local_codex(account):
+                return self.local_codex_catalog(account) is not None
             if provider == 'codex':
                 d = read_json(home / 'auth.json', {})
                 return d.get('auth_mode') == 'chatgpt' and bool((d.get('tokens') or {}).get('access_token'))
@@ -375,6 +420,11 @@ class Manager:
             return False
 
     def models(self, provider, home=None):
+        if provider == 'codex' and home:
+            account = next((a for a in self.accounts() if a['provider'] == provider and a['home'] == home), None)
+            if account and self.is_local_codex(account):
+                return [dict(id=row['id'], name=row['id'], efforts=[], default_effort='')
+                        for row in (self.local_codex_catalog(account) or [])]
         if provider == 'ollama':
             account = next((a for a in self.accounts() if a['provider'] == 'ollama' and a['home'] == home), self.account('default-ollama'))
             return self.ollama_models(account)
@@ -450,6 +500,8 @@ class Manager:
         self.resolve_cli('claude-agent-acp' if provider == 'ollama' else provider)
         if provider == 'ollama':
             endpoint = self.ollama_endpoint(endpoint or 'http://127.0.0.1:11434')
+        if provider == 'codex' and endpoint:
+            endpoint = self.codex_endpoint(endpoint)
         with self.lock():
             data = read_json(self.registry, {'version': 1, 'accounts': []})
             if any(a['provider'] == provider and a['name'] == name for a in self.accounts()):
@@ -459,11 +511,17 @@ class Manager:
             folder.mkdir(parents=True, mode=0o700)
             folder.parent.chmod(0o700)
             item = dict(id=identity, name=name, provider=provider, home=str(folder), builtin=False)
-            if provider == 'ollama':
+            if provider == 'ollama' or (provider == 'codex' and endpoint):
                 item['endpoint'] = endpoint
             # A new profile gets no copied tokens, endpoints, or API billing settings.
             if provider == 'codex':
-                atomic_bytes(folder / 'config.toml', b'cli_auth_credentials_store = "file"\n')
+                config = 'cli_auth_credentials_store = "file"\n'
+                if self.is_local_codex(item):
+                    config += ('model_provider = "local"\n\n[model_providers.local]\n'
+                               'name = "Local OpenAI-compatible server"\n'
+                               'base_url = ' + json.dumps(endpoint + '/v1') + '\n'
+                               'wire_api = "responses"\nrequires_openai_auth = false\n')
+                atomic_bytes(folder / 'config.toml', config.encode())
             data['accounts'].append(item)
             write_json(self.registry, data)
             return item
@@ -479,6 +537,8 @@ class Manager:
             if any(a['id'] != identity and a['provider'] == account['provider'] and a['name'] == name
                    for a in self.accounts()):
                 raise ValueError('같은 서비스에 같은 이름의 계정이 있습니다.')
+            if account['provider'] == 'codex' and endpoint is not None and endpoint != account.get('endpoint', ''):
+                raise ValueError('Codex 서버 주소를 바꾸려면 새 로컬 계정을 추가하세요.')
             updated = dict(account, name=name)
             if account['provider'] == 'ollama':
                 updated['endpoint'] = self.ollama_endpoint(endpoint if endpoint is not None else account['endpoint'])
@@ -522,10 +582,16 @@ class Manager:
             return env
         if provider != 'claude' or not a['builtin']:
             env[{'codex': 'CODEX_HOME', 'claude': 'CLAUDE_CONFIG_DIR', 'grok': 'GROK_HOME'}[provider]] = a['home']
+        if self.is_local_codex(a):
+            config = json.loads(env.get('CODEX_CONFIG') or '{}')
+            config.update(self.local_codex_config(a))
+            env['CODEX_CONFIG'] = json.dumps(config)
         return env
 
     def login_plan(self, identity):
         a = self.account(identity)
+        if self.is_local_codex(a):
+            raise ValueError('로컬 Codex는 로그인 없이 서버에 연결합니다.')
         if a['provider'] == 'ollama':
             raise ValueError('Ollama는 로그인 없이 서버에 연결합니다.')
         if a['builtin']:
@@ -537,7 +603,7 @@ class Manager:
 
     def codex_login(self, identity):
         a = self.account(identity)
-        if a['provider'] != 'codex' or a['builtin']:
+        if a['provider'] != 'codex' or a['builtin'] or self.is_local_codex(a):
             raise ValueError('별도 Codex 계정을 선택하세요.')
         with CodexRPC(self.resolve_cli('codex'), self.auth_env(a)) as rpc:
             result = rpc.request('account/login/start', {'type': 'chatgptDeviceCode'}, timeout=40)
@@ -566,6 +632,9 @@ class Manager:
         a = self.account(identity)
         result = dict(account_id=identity, windows=[], notes=[], checked_at=datetime.datetime.now(
             datetime.timezone.utc).isoformat(), status='unavailable', message='')
+        if self.is_local_codex(a):
+            result['message'] = '로컬 모델에는 Codex·Claude 구독 잔량이 적용되지 않습니다.'
+            return result
         if a['provider'] == 'ollama':
             result['message'] = '로컬 모델에는 Codex·Claude 구독 잔량이 적용되지 않습니다.' if self.account_ready(a) else 'Ollama 서버에 연결되지 않았습니다. 서버 실행과 주소를 확인하세요.'
             return result
@@ -625,6 +694,13 @@ class Manager:
         a = self.account(req['account_id'])
         if a['provider'] != req['provider']:
             raise ValueError('서비스와 계정이 일치하지 않습니다.')
+        if self.is_local_codex(a):
+            self._local_codex_cache.pop(a['endpoint'], None)
+            rows = self.local_codex_catalog(a)
+            if rows is None:
+                raise ValueError('로컬 Codex 서버에 연결하지 못했습니다. 서버 주소와 실행 상태를 확인하세요.')
+            if req['model'].strip() not in [row['id'] for row in rows]:
+                raise ValueError('서버에 설치된 로컬 모델을 선택하세요.')
         if a['provider'] == 'ollama' and not self.account_ready(a):
             raise ValueError('Ollama 서버에 연결하지 못했습니다. 서버를 실행하고 주소를 확인하세요.')
         if not self.account_ready(a):
@@ -643,7 +719,7 @@ class Manager:
         if effort and effort not in allowed_efforts:
             raise ValueError('지원하지 않는 effort 값입니다.')
         known = next((m for m in self.models(a['provider'], a['home']) if m['id'] == model), None)
-        if known and effort and effort not in known['efforts']:
+        if known and effort and not self.is_local_codex(a) and effort not in known['efforts']:
             raise ValueError('선택한 모델이 지원하는 effort를 선택하세요.')
         self.validate_fallback(req)
         self.resolve_cli(CLI_COMMAND[a['provider']])
@@ -742,11 +818,13 @@ class Manager:
     def validate_fallback(self, req):
         ids = self.fallback_ids(req)
         enabled = req.get('auto_fallback') in (True, 'true')
+        if self.is_local_codex(self.account(req['account_id'])) and (ids or enabled):
+            raise ValueError('로컬 Codex 계정에는 구독 계정 자동 전환을 설정할 수 없습니다.')
         if enabled and (req['provider'] not in ('codex', 'claude') or not ids):
             raise ValueError('자동 전환은 Codex·Claude Code 예비 계정을 선택한 뒤 켤 수 있습니다.')
         for identity in ids:
             a = self.account(identity)
-            if identity == req['account_id'] or a['provider'] != req['provider']:
+            if identity == req['account_id'] or a['provider'] != req['provider'] or self.is_local_codex(a):
                 raise ValueError('현재 계정을 제외하고 같은 서비스의 예비 계정을 선택하세요.')
             if not self.account_ready(a):
                 raise ValueError('예비 계정에 먼저 로그인하세요.')
