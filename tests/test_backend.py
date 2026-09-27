@@ -74,6 +74,43 @@ class ManagerTests(unittest.TestCase):
         self.manager.restore_account('default-grok')
         self.assertEqual(self.manager.account('default-grok')['id'], 'default-grok')
 
+    def test_delete_account_ignores_template_and_inactive_agent_links(self):
+        account = self.manager.create_account('Unused', 'codex')
+        template = self.records[0]
+        inactive = dict(self.records[2], is_active=False)
+        template['acp_command'] = str(self.manager.root / 'launch-template')
+        inactive['acp_command'] = str(self.manager.root / 'launch-inactive')
+        b.write_json(self.manager.root / 'template.json',
+                     {'account_ids': {'codex': account['id']}})
+        b.write_json(self.manager.root / 'inactive.json',
+                     {'fallback_ids': {'codex': [account['id']]}})
+        b.write_json(self.manager.store, [template, inactive])
+
+        self.manager.delete_account(account['id'])
+        self.manager.delete_account('default-codex')
+
+        hidden = {item['id'] for item in self.manager.hidden_accounts()}
+        self.assertIn(account['id'], hidden)
+        self.assertIn('default-codex', hidden)
+
+    def test_delete_account_rejects_active_agent_links(self):
+        record = dict(self.records[1], acp_command=str(self.manager.root / 'launch-linked'))
+        b.write_json(self.manager.store, [record])
+        explicit = self.manager.create_account('Explicit', 'codex')
+        fallback = self.manager.create_account('Fallback', 'codex')
+        cases = [
+            (explicit['id'], {'account_ids': {'codex': explicit['id']}}),
+            ('default-codex', {}),
+            (fallback['id'], {'account_ids': {'codex': explicit['id']},
+                              'fallback_ids': {'codex': [fallback['id']]}}),
+        ]
+        for identity, profile in cases:
+            with self.subTest(identity=identity):
+                b.write_json(self.manager.root / 'linked.json', profile)
+                with self.assertRaisesRegex(ValueError, '에이전트에 연결된 계정입니다'):
+                    self.manager.delete_account(identity)
+                self.assertEqual(self.manager.account(identity)['id'], identity)
+
     def test_apply_rechecks_primary_and_fallback_after_validation_under_lock(self):
         account = self.manager.create_account('Race target', 'codex')
         b.write_json(Path(account['home']) / 'auth.json',

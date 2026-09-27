@@ -463,6 +463,10 @@ class Manager:
             return read_json(self.root / (command.name[7:].removesuffix('.exe') + '.json'), {})
         return {}
 
+    def active_agent_records(self, records=None):
+        return (record for record in (read_json(self.store, []) if records is None else records)
+                if record.get('pubkey') and record.get('is_active', True))
+
     def snapshot(self):
         if not self.store.exists():
             raise ValueError('Buzz를 설치하고 에이전트를 만든 뒤 새로고침하세요.')
@@ -474,9 +478,7 @@ class Manager:
             public_accounts.append(dict(a, ready=self.account_ready(a),
                                         models=self.models(a['provider'], a['home'])))
         agents = []
-        for r in records:
-            if not r.get('pubkey') or not r.get('is_active', True):
-                continue
+        for r in self.active_agent_records(records):
             profile = self.read_profile(r)
             provider = 'ollama' if profile.get('active_provider') == 'ollama' and r.get('runtime') == 'claude' else r.get('runtime') or 'codex'
             if provider not in PROVIDERS:
@@ -570,7 +572,7 @@ class Manager:
     def delete_account(self, identity):
         with self.lock():
             self.account(identity)
-            for r in read_json(self.store, []):
+            for r in self.active_agent_records():
                 profile = self.read_profile(r)
                 provider = 'ollama' if profile.get('active_provider') == 'ollama' and r.get('runtime') == 'claude' else r.get('runtime') or 'codex'
                 implicit_default = 'default-' + provider if not profile.get('account_ids', {}).get(provider) else None
@@ -959,9 +961,7 @@ class Manager:
         state = dict(checked_at=datetime.datetime.now(datetime.timezone.utc).isoformat(), usages=usages, events=[])
         changes = []
         with self.lock():
-            for r in read_json(self.store, []):
-                if not r.get('pubkey') or not r.get('is_active', True):
-                    continue
+            for r in self.active_agent_records():
                 profile = self.read_profile(r)
                 provider = r.get('runtime')
                 if provider not in ('codex', 'claude') or profile.get('active_provider') == 'ollama' or not profile.get('auto_fallback', {}).get(provider):
