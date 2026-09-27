@@ -4,10 +4,10 @@ cd "$(dirname "$0")/.."
 python3 -m unittest discover -s tests -v
 TEST_DIR=$(mktemp -d)
 trap 'rm -rf "$TEST_DIR"' EXIT
-xcrun swiftc -D TESTING -swift-version 5 -parse-as-library -framework SwiftUI -framework AppKit Sources/App.swift Sources/Localization.swift tests/LoginParsingTests.swift -o "$TEST_DIR/login-tests"
+xcrun swiftc -D TESTING -swift-version 5 -parse-as-library -framework SwiftUI -framework AppKit Sources/App.swift Sources/Controls.swift Sources/Localization.swift tests/LoginParsingTests.swift -o "$TEST_DIR/login-tests"
 "$TEST_DIR/login-tests"
 cp tests/fixtures/navigation_backend.py "$TEST_DIR/backend.py"
-xcrun swiftc -D TESTING -swift-version 5 -parse-as-library -framework SwiftUI -framework AppKit Sources/App.swift Sources/Localization.swift tests/NavigationTests.swift -o "$TEST_DIR/navigation-tests"
+xcrun swiftc -D TESTING -swift-version 5 -parse-as-library -framework SwiftUI -framework AppKit Sources/App.swift Sources/Controls.swift Sources/Localization.swift tests/NavigationTests.swift -o "$TEST_DIR/navigation-tests"
 python3 - "$TEST_DIR" <<'PYTHON'
 import os, pathlib, subprocess, sys
 root = pathlib.Path(sys.argv[1])
