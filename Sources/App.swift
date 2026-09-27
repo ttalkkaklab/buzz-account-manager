@@ -267,7 +267,7 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
             accountSheet = false
             await refresh()
             if let id = object?["id"] as? String, let a = snapshot?.accounts.first(where: { $0.id == id }) {
-                if a.isServer { selection = "accounts"; await refreshUsage(a.id) }
+                if a.isServer { section = .accounts; await refreshUsage(a.id) }
                 else { startLogin(a) }
             }
         } catch { self.error = error.localizedDescription }
