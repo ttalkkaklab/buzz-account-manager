@@ -53,6 +53,8 @@ The old account moves into the selected fallback slot. Recovery of its quota alo
 
 Saving also pins the selected runtime. If the account launcher receives a different service or has no account assigned for that service, it refuses to start instead of using the default account. If Buzz's launcher setting has been replaced, the manager shows the saved account with a disconnected warning; check the selection and save again to reconnect it. Reading settings does not repair or restart agents automatically. Existing assignments need to be saved again to update their installed launcher backend.
 
+If several agents use the same definition, saving gives the selected agent a separate local definition before pinning its account launcher. Other agents and the original definition stay unchanged. A missing or ambiguous definition, or a shared team-managed definition that cannot be safely separated, blocks the save with an explanation. The manager rereads the saved instance and its linked definition to verify both launchers. If that check fails, it reports a failure and keeps the backups without overwriting the unexpected store; refresh and inspect the settings before starting Buzz. Legacy agents without a linked definition retain instance-only verification. This check cannot prevent a later external edit from replacing the launcher.
+
 ## Local data and credentials
 
 The app uses the provider CLI’s authentication storage. Added accounts have separate directories and CLI sessions. The default CLI account is preserved.

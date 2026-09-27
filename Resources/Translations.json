@@ -946,5 +946,21 @@
   "실행할 서비스의 계정이 지정되지 않았습니다. 계정 설정을 다시 저장하세요.": {
     "en": "No account is assigned to this service. Save the account settings again.",
     "vi": "Chưa chỉ định tài khoản cho dịch vụ này. Vui lòng lưu lại cài đặt tài khoản."
+  },
+  "연결된 에이전트 정의가 없거나 중복되어 저장할 수 없습니다. Buzz에서 정의를 확인하세요.": {
+    "en": "Cannot save because the linked agent definition is missing or duplicated. Check the definition in Buzz.",
+    "vi": "Không thể lưu vì định nghĩa tác nhân được liên kết bị thiếu hoặc trùng lặp. Hãy kiểm tra định nghĩa trong Buzz."
+  },
+  "팀에서 관리하는 공통 정의는 자동으로 나눌 수 없습니다. Buzz에서 좌석 전용 정의를 먼저 연결하세요.": {
+    "en": "A team-managed definition cannot be split automatically. First link a separate definition for this agent in Buzz.",
+    "vi": "Không thể tự động tách định nghĩa do nhóm quản lý. Trước tiên, hãy liên kết một định nghĩa riêng cho tác nhân này trong Buzz."
+  },
+  "좌석 전용 정의의 이름이 겹칩니다. 다시 저장하세요.": {
+    "en": "The separate definition name is already in use. Please save again.",
+    "vi": "Tên định nghĩa riêng đã được sử dụng. Vui lòng lưu lại."
+  },
+  "저장 뒤 계정 연결이 달라졌습니다. Buzz를 시작하기 전에 설정을 새로고침하고 다시 확인하세요.": {
+    "en": "The account connection changed after saving. Refresh and check the settings before starting Buzz.",
+    "vi": "Liên kết tài khoản đã thay đổi sau khi lưu. Hãy làm mới và kiểm tra cài đặt trước khi khởi động Buzz."
   }
 }

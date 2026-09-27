@@ -52,8 +52,10 @@ class AccountPinTests(unittest.TestCase):
             with self.subTest(provider=provider):
                 account, req = self.apply(provider)
                 records = b.read_json(self.manager.store)
-                self.assertEqual(records[0]['runtime'], provider)
-                self.assertEqual(records[0]['model'], req['model'])
+                definition = next(r for r in records if not r.get('pubkey') and r['slug'] == records[1]['persona_id'])
+                self.assertEqual(definition['runtime'], provider)
+                self.assertEqual(definition['model'], req['model'])
+                self.assertEqual(records[0], self.definition)
                 self.assertEqual(records[2], self.sibling)
                 record = records[1]
                 self.assertEqual(record['agent_command_override'], '/fixture/' + b.CLI_COMMAND[provider])
@@ -62,7 +64,8 @@ class AccountPinTests(unittest.TestCase):
                 self.assertEqual(record['effort_level'], 'high')
                 # Buzz re-snapshots the linked definition at restart. The saved
                 # definition and explicit runtime pin must agree with the account.
-                record.update(runtime=records[0]['runtime'], model=records[0]['model'])
+                record.update(runtime=definition['runtime'], model=definition['model'],
+                              acp_command=definition['acp_command'])
                 incoming_command = record['agent_command_override']
                 env = dict(os.environ, HOME=str(self.manager.home), BUZZ_PRIVATE_KEY='fixture-identity',
                            BUZZ_ACP_AGENT_COMMAND=incoming_command, BUZZ_ACP_MODEL=req['model'],
