@@ -275,13 +275,13 @@ class Manager:
         finally:
             os.close(fd)
 
-    def accounts(self):
+    def accounts(self, include_hidden=False):
         data = read_json(self.registry, {'version': 1, 'accounts': []})
         defaults = [dict(id='default-' + p, name=('이 컴퓨터 기본 계정' if os.name == 'nt' else '이 Mac 기본 계정'), provider=p,
                          home=str(self.home / ('.' + p)), builtin=True) for p in PROVIDERS if p != 'ollama']
         defaults.append(dict(id='default-ollama', name=('이 컴퓨터의 Ollama' if os.name == 'nt' else '이 Mac의 Ollama'), provider='ollama',
                              home=str(self.root / 'ollama/default'), builtin=True, endpoint='http://127.0.0.1:11434'))
-        return defaults + data['accounts']
+        return [a for a in defaults if include_hidden or a['id'] not in data.get('hidden_defaults', [])] + data['accounts']
 
     def account(self, identity):
         for a in self.accounts():
@@ -429,8 +429,10 @@ class Manager:
                 return [dict(id=row['id'], name=row['id'], efforts=[], default_effort='')
                         for row in (self.local_codex_catalog(account) or [])]
         if provider == 'ollama':
-            account = next((a for a in self.accounts() if a['provider'] == 'ollama' and a['home'] == home), self.account('default-ollama'))
-            return self.ollama_models(account)
+            account = next((a for a in self.accounts() if a['provider'] == 'ollama' and a['home'] == home), None)
+            if account is None:
+                account = next((a for a in self.accounts() if a['id'] == 'default-ollama'), None)
+            return self.ollama_models(account) if account else []
         homes = [Path(home)] if home else []
         homes.append(self.home / ('.' + provider))
         for folder in homes:
@@ -491,7 +493,7 @@ class Manager:
                                account_id=aid, fallback_ids=profile.get('fallback_ids', {}).get(provider, []),
                                auto_fallback=profile.get('auto_fallback', {}).get(provider, False)))
         return dict(revision=revision(raw), agents=agents,
-                    accounts=public_accounts, monitor=read_json(self.root / 'monitor-state.json', {}),
+                    accounts=public_accounts, hidden_defaults=self.hidden_defaults(), monitor=read_json(self.root / 'monitor-state.json', {}),
                     cli_available={p: bool(shutil.which('claude-agent-acp' if p == 'ollama' else p, path=self.executable_path())) for p in PROVIDERS})
 
     def create_account(self, name, provider, endpoint=None, model_context_window=None):
@@ -562,17 +564,33 @@ class Manager:
     def delete_account(self, identity):
         with self.lock():
             a = self.account(identity)
-            if a['builtin']:
-                raise ValueError('기본 계정은 목록에서 삭제할 수 없습니다.')
             for r in read_json(self.store, []):
                 profile = self.read_profile(r)
-                if identity in profile.get('account_ids', {}).values() or any(identity in ids for ids in profile.get('fallback_ids', {}).values()):
+                provider = 'ollama' if profile.get('active_provider') == 'ollama' and r.get('runtime') == 'claude' else r.get('runtime') or 'codex'
+                implicit_default = 'default-' + provider if not profile.get('account_ids', {}).get(provider) else None
+                if identity == implicit_default or identity in profile.get('account_ids', {}).values() or any(identity in ids for ids in profile.get('fallback_ids', {}).values()):
                     raise ValueError('에이전트에 연결된 계정입니다. 먼저 다른 계정으로 바꾸세요.')
-            data = read_json(self.registry)
-            data['accounts'] = [x for x in data['accounts'] if x['id'] != identity]
+            data = read_json(self.registry, {'version': 1, 'accounts': []})
+            if a['builtin']:
+                data['hidden_defaults'] = sorted(set(data.get('hidden_defaults', [])) | {identity})
+            else:
+                data['accounts'] = [x for x in data['accounts'] if x['id'] != identity]
             write_json(self.registry, data)
             # Retain authentication files/Keychain entries. Removal is reversible through import.
             return {'message': '계정 목록에서 제거했습니다. 로그인 파일은 보관합니다.'}
+
+    def hidden_defaults(self):
+        visible = {a['id'] for a in self.accounts()}
+        return [a for a in self.accounts(include_hidden=True) if a['builtin'] and a['id'] not in visible]
+
+    def restore_default(self, identity):
+        with self.lock():
+            if not any(a['id'] == identity and a['builtin'] for a in self.accounts(include_hidden=True)):
+                raise ValueError('복원할 기본 계정이 없습니다.')
+            data = read_json(self.registry, {'version': 1, 'accounts': []})
+            data['hidden_defaults'] = [i for i in data.get('hidden_defaults', []) if i != identity]
+            write_json(self.registry, data)
+            return {'message': '기본 계정을 복원했습니다.'}
 
     def auth_env(self, a, original=None):
         env = dict(os.environ if original is None else original)
@@ -1048,7 +1066,7 @@ class Manager:
 def main():
     manager = Manager()
     action = sys.argv[1]
-    req = json.load(sys.stdin) if action in ('create', 'update', 'delete', 'apply', 'validate', 'usage') else {}
+    req = json.load(sys.stdin) if action in ('create', 'update', 'delete', 'restore', 'apply', 'validate', 'usage') else {}
     if action == 'install-monitor':
         result = manager.install_monitor()
     elif action == 'monitor':
@@ -1063,6 +1081,8 @@ def main():
         result = manager.update_account(req['account_id'], req['name'], req.get('endpoint'))
     elif action == 'delete':
         result = manager.delete_account(req['account_id'])
+    elif action == 'restore':
+        result = manager.restore_default(req['account_id'])
     elif action == 'validate':
         manager.validate(req)
         result = {'ok': True}

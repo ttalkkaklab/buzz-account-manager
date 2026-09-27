@@ -37,6 +37,11 @@ struct Account: Codable, Identifiable {
     var isLocalCodex: Bool { provider == "codex" && !(endpoint ?? "").isEmpty }
     var isServer: Bool { provider == "ollama" || isLocalCodex }
 }
+struct HiddenDefault: Codable, Identifiable {
+    var id: String
+    var name: String
+    var provider: String
+}
 struct Agent: Codable, Identifiable {
     var id: String
     var name: String
@@ -57,6 +62,7 @@ struct Snapshot: Codable {
     var agents: [Agent]
     var accounts: [Account]
     var cli_available: [String: Bool]
+    var hidden_defaults: [HiddenDefault]? = nil
     var monitor: MonitorState? = nil
 }
 struct AppFailure: LocalizedError {
@@ -125,6 +131,7 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
     @Published var message = ""
     @Published var error = ""
     @Published var accountSheet = false
+    @Published var accountFilter = "all"
     @Published var loginAccount: Account?
     @Published var loginOutput = ""
     @Published var loginRunning = false
@@ -170,6 +177,18 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
         do {
             snapshot = try JSONDecoder().decode(Snapshot.self, from: await callBackend("status"))
             if selection.isEmpty { selection = snapshot?.agents.first?.id ?? "accounts" }
+        } catch { self.error = error.localizedDescription }
+    }
+    func changeAccount(_ id: String, restore: Bool = false) async {
+        guard !busy, !loginRunning else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let data = try await callBackend(restore ? "restore" : "delete", payload: ["account_id": id])
+            let result = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            usage.removeValue(forKey: id)
+            snapshot = try JSONDecoder().decode(Snapshot.self, from: await callBackend("status"))
+            message = localizedBackend(result?["message"] as? String ?? "")
         } catch { self.error = error.localizedDescription }
     }
     func refreshUsage(_ id: String) async {
@@ -488,6 +507,7 @@ struct AgentEditor: View {
                     fieldTitle("02", provider == "ollama" ? L("Ollama 서버") : L("구독 계정"))
                     HStack {
                         Picker(L("구독 계정"), selection: $accountID) {
+                            if accounts.isEmpty { Text(L("계정 등록 필요")).tag("") }
                             if accountID == "unregistered" { Text(L("기존 경로: 계정 등록 필요")).tag("unregistered") }
                             ForEach(accounts) { item in Text(item.builtin ? L(item.name) : item.name).tag(item.id) }
                         }.labelsHidden().controlSize(.large)
@@ -601,6 +621,9 @@ struct AccountsView: View {
     @Environment(\.locale) private var displayLocale
     @ObservedObject var app: AppModel
     var accounts: [Account]
+    @State private var pendingDelete: Account?
+    private let providers = ["codex", "claude", "grok", "ollama"]
+    var visibleAccounts: [Account] { accounts.filter { app.accountFilter == "all" || $0.provider == app.accountFilter } }
     var body: some View {
         let _ = displayLocale
         ScrollView {
@@ -615,7 +638,19 @@ struct AccountsView: View {
                     Button { app.accountSheet = true } label: { Label(L("계정 추가"), systemImage: "plus") }
                         .buttonStyle(.borderedProminent).tint(.teal).controlSize(.large)
                 }
-                ForEach(["codex", "claude", "grok", "ollama"], id: \.self) { provider in
+                Picker(L("프로바이더 필터"), selection: $app.accountFilter) {
+                    Text(L("전체") + " (\(accounts.count))").tag("all")
+                    ForEach(providers, id: \.self) { provider in
+                        Text((provider == "claude" ? "Claude" : providerName(provider)) + " (\(accounts.filter { $0.provider == provider }.count))").tag(provider)
+                    }
+                }.pickerStyle(.segmented)
+                if visibleAccounts.isEmpty {
+                    VStack(spacing: 12) {
+                        Text(L("표시할 계정이 없습니다.")).foregroundStyle(.secondary)
+                        Button(L("계정 추가")) { app.accountSheet = true }
+                    }.frame(maxWidth: .infinity).padding(24)
+                }
+                ForEach(providers.filter { provider in visibleAccounts.contains { $0.provider == provider } }, id: \.self) { provider in
                     VStack(alignment: .leading, spacing: 14) {
                         HStack { ProviderBadge(provider: provider); Spacer() }
                         ForEach(accounts.filter { $0.provider == provider }) { account in
@@ -639,6 +674,9 @@ struct AccountsView: View {
                                     Text(L("기본 계정")).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
+                            Button(role: .destructive) { pendingDelete = account } label: {
+                                Label(L("계정 삭제"), systemImage: "trash")
+                            }.disabled(app.busy || app.loginRunning)
                             UsageView(usage: app.usage[account.id], loading: app.usageLoading.contains(account.id))
                             Button(L("이 계정 잔량 새로고침")) { Task { await app.refreshUsage(account.id) } }
                                 .font(.caption)
@@ -648,6 +686,18 @@ struct AccountsView: View {
                         }
                     }.padding(22).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
                 }
+                if let hidden = app.snapshot?.hidden_defaults, !hidden.isEmpty {
+                    DisclosureGroup(L("숨긴 기본 계정")) {
+                        ForEach(hidden) { account in
+                            HStack {
+                                Text(providerName(account.provider) + " · " + L(account.name))
+                                Spacer()
+                                Button(L("복원")) { Task { await app.changeAccount(account.id, restore: true) } }
+                                    .disabled(app.busy || app.loginRunning)
+                            }.padding(.vertical, 6)
+                        }
+                    }
+                }
                 Text(L("잔량은 서비스가 제공한 구독 한도의 남은 비율입니다. 정확한 토큰 수로 환산하지 않습니다. 조회 시각 이후의 사용량은 새로고침하면 반영됩니다."))
                     .font(.caption).foregroundStyle(.secondary)
                 Label(L("새 계정은 별도 경로에 로그인합니다. 기존 CLI의 기본 계정은 변경하지 않습니다."), systemImage: "lock.shield")
@@ -656,6 +706,18 @@ struct AccountsView: View {
                     .font(.caption).foregroundStyle(.tertiary)
             }.padding(32).frame(maxWidth: 890)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        .alert(L("계정을 목록에서 삭제할까요?"), isPresented: Binding(
+            get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }
+        ), presenting: pendingDelete) { account in
+            Button(L("취소"), role: .cancel) { pendingDelete = nil }
+            Button(L("계정 삭제"), role: .destructive) {
+                Task { await app.changeAccount(account.id) }
+                pendingDelete = nil
+            }
+        } message: { account in
+            Text(L("{0} 계정을 목록에서 제거합니다. 로그인 파일과 Keychain 정보는 보관합니다.", account.builtin ? L(account.name) : account.name)
+                 + (account.builtin ? "\n" + L("숨긴 기본 계정에서 언제든 복원할 수 있습니다.") : ""))
+        }
     }
 }
 func usageDate(_ value: String) -> Date? {
