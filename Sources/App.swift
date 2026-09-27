@@ -643,7 +643,7 @@ struct AccountsView: View {
                     ForEach(providers, id: \.self) { provider in
                         Text((provider == "claude" ? "Claude" : providerName(provider)) + " (\(accounts.filter { $0.provider == provider }.count))").tag(provider)
                     }
-                }.pickerStyle(.segmented)
+                }.pickerStyle(.segmented).labelsHidden()
                 if visibleAccounts.isEmpty {
                     VStack(spacing: 12) {
                         Text(L("표시할 계정이 없습니다.")).foregroundStyle(.secondary)
