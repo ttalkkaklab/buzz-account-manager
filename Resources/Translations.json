@@ -155,14 +155,6 @@
     "en": "Saved credentials are available.",
     "vi": "Đã có thông tin đăng nhập được lưu."
   },
-  "계정 탭에서 먼저 로그인하세요.": {
-    "en": "Sign in on the Accounts tab first.",
-    "vi": "Đăng nhập trong mục Tài khoản trước."
-  },
-  "도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 왼쪽 아래 새로고침을 누르세요.": {
-    "en": "Uses local models that support tool calls. Install a model, then click Refresh at the bottom left.",
-    "vi": "Sử dụng mô hình cục bộ hỗ trợ gọi công cụ. Cài đặt mô hình rồi nhấn Làm mới ở góc dưới bên trái."
-  },
   "예비 구독 계정 · 최대 3개": {
     "en": "Fallback accounts · up to 3",
     "vi": "Tài khoản dự phòng · tối đa 3"
@@ -591,10 +583,6 @@
     "en": "Could not connect to Ollama. Start the server and check its address.",
     "vi": "Không thể kết nối với Ollama. Khởi chạy máy chủ và kiểm tra địa chỉ."
   },
-  "로그인 정보를 찾지 못했습니다. 계정 탭에서 먼저 로그인하세요.": {
-    "en": "Credentials not found. Sign in on the Accounts tab first.",
-    "vi": "Không tìm thấy thông tin đăng nhập. Đăng nhập trong mục Tài khoản trước."
-  },
   "모델 ID를 확인하세요.": {
     "en": "Check the model ID.",
     "vi": "Kiểm tra ID mô hình."
@@ -795,10 +783,6 @@
     "en": "Remove this account from the list?",
     "vi": "Xóa tài khoản này khỏi danh sách?"
   },
-  "{0} 계정을 목록에서 제거합니다. 로그인 파일과 Keychain 정보는 보관합니다.": {
-    "en": "Remove {0} from the list. Sign-in files and Keychain entries will be kept.",
-    "vi": "Xóa {0} khỏi danh sách. Các tệp đăng nhập và thông tin Keychain sẽ được giữ lại."
-  },
   "숨긴 계정에서 언제든 복원할 수 있습니다.": {
     "en": "You can restore it anytime under Hidden accounts.",
     "vi": "Bạn có thể khôi phục bất kỳ lúc nào trong mục Tài khoản đã ẩn."
@@ -814,5 +798,121 @@
   "숨긴 계정 중에 같은 이름이 있습니다. 「숨긴 계정」에서 복원하거나 다른 이름을 쓰세요.": {
     "en": "A hidden account already uses this name. Restore it under Hidden accounts, or choose another name.",
     "vi": "Một tài khoản đã ẩn đang dùng tên này. Hãy khôi phục trong mục Tài khoản đã ẩn hoặc chọn tên khác."
+  },
+  "계정 설정": {
+    "en": "Account settings",
+    "vi": "Cài đặt tài khoản"
+  },
+  "에이전트 설정": {
+    "en": "Agent settings",
+    "vi": "Cài đặt tác nhân"
+  },
+  "일반 설정": {
+    "en": "General settings",
+    "vi": "Cài đặt chung"
+  },
+  "계정": {
+    "en": "Accounts",
+    "vi": "Tài khoản"
+  },
+  "일반": {
+    "en": "General",
+    "vi": "Chung"
+  },
+  "등록된 에이전트가 없습니다. Buzz에서 에이전트를 만든 뒤 새로고침하세요.": {
+    "en": "No agents registered. Create an agent in Buzz, then refresh.",
+    "vi": "Chưa có tác nhân nào. Tạo tác nhân trong Buzz rồi làm mới."
+  },
+  "버전 {0}": {
+    "en": "Version {0}",
+    "vi": "Phiên bản {0}"
+  },
+  "Windows 미리보기 — 실기 검증 전": {
+    "en": "Windows preview — not yet verified on a real PC",
+    "vi": "Bản xem trước Windows — chưa kiểm chứng trên máy thật"
+  },
+  "계정 정보는 이 컴퓨터에 저장합니다. 설치 파일에는 사용자 계정이나 인증정보가 없습니다.": {
+    "en": "Account data is stored on this computer. The installer contains no user accounts or credentials.",
+    "vi": "Dữ liệu tài khoản được lưu trên máy này. Tệp cài đặt không chứa tài khoản hay thông tin xác thực."
+  },
+  "계정 정보 수정": {
+    "en": "Edit account",
+    "vi": "Sửa tài khoản"
+  },
+  "계정 이름": {
+    "en": "Account name",
+    "vi": "Tên tài khoản"
+  },
+  "저장": {
+    "en": "Save",
+    "vi": "Lưu"
+  },
+  "계정 정보를 저장했습니다.": {
+    "en": "Account details saved.",
+    "vi": "Đã lưu thông tin tài khoản."
+  },
+  "{0} 계정을 목록에서 제거합니다. 로그인 파일과 저장된 인증정보는 보관합니다.": {
+    "en": "Remove {0} from the list. Sign-in files and saved credentials will be kept.",
+    "vi": "Xóa {0} khỏi danh sách. Các tệp đăng nhập và thông tin xác thực đã lưu sẽ được giữ lại."
+  },
+  "이 컴퓨터의 에이전트": {
+    "en": "Agents on this PC",
+    "vi": "Các tác nhân trên máy tính này"
+  },
+  "이 컴퓨터 기본 계정": {
+    "en": "This PC’s default account",
+    "vi": "Tài khoản mặc định của máy tính này"
+  },
+  "이 컴퓨터의 Ollama": {
+    "en": "Ollama on this PC",
+    "vi": "Ollama trên máy tính này"
+  },
+  "앱을 닫아도 이 컴퓨터에 로그인한 동안 동작합니다. 계정을 전환하면 실행 중인 Buzz를 종료합니다. Buzz는 직접 시작하세요.": {
+    "en": "Runs while you are signed in to this PC, even when this app is closed. Switching accounts quits Buzz if it is running. Start Buzz manually.",
+    "vi": "Hoạt động khi bạn đăng nhập vào máy này, kể cả khi đóng ứng dụng. Chuyển tài khoản sẽ đóng Buzz nếu đang chạy. Hãy tự mở Buzz."
+  },
+  "다른 요청을 처리하고 있습니다.": {
+    "en": "Another request is in progress.",
+    "vi": "Đang xử lý yêu cầu khác."
+  },
+  "로그인이 끝나면 이 창을 닫으세요. 계정 목록은 자동으로 새로고침됩니다.": {
+    "en": "When sign-in finishes, close this window. The account list refreshes automatically.",
+    "vi": "Khi đăng nhập xong, hãy đóng cửa sổ này. Danh sách tài khoản sẽ tự làm mới."
+  },
+  "Enter 키를 누르면 닫힙니다": {
+    "en": "Press Enter to close",
+    "vi": "Nhấn Enter để đóng"
+  },
+  "로그인을 시작하지 못했습니다. 계정과 CLI 설치를 확인하세요.": {
+    "en": "Could not start sign-in. Check the account and CLI installation.",
+    "vi": "Không thể bắt đầu đăng nhập. Kiểm tra tài khoản và cài đặt CLI."
+  },
+  "Buzz 실행 파일을 찾지 못했습니다. Windows용 Buzz를 설치하세요: ": {
+    "en": "Buzz executable not found. Install Buzz for Windows:",
+    "vi": "Không tìm thấy tệp thực thi Buzz. Hãy cài Buzz cho Windows:"
+  },
+  "Node.js를 찾지 못했습니다. Buzz에서 실행 도구를 설치하세요.": {
+    "en": "Node.js was not found. Install the runtime tools in Buzz.",
+    "vi": "Không tìm thấy Node.js. Hãy cài công cụ chạy trong Buzz."
+  },
+  "CLI 실행 파일을 확인할 수 없습니다. Buzz에서 실행 도구를 다시 설치하세요: ": {
+    "en": "Could not verify the CLI executable. Reinstall the runtime tools in Buzz:",
+    "vi": "Không thể xác minh tệp thực thi CLI. Hãy cài lại công cụ chạy trong Buzz:"
+  },
+  "CLI 연결이 종료됐습니다.": {
+    "en": "The CLI connection closed.",
+    "vi": "Kết nối CLI đã đóng."
+  },
+  "계정 설정에서 먼저 로그인하세요.": {
+    "en": "Sign in under Account settings first.",
+    "vi": "Đăng nhập trong Cài đặt tài khoản trước."
+  },
+  "로그인 정보를 찾지 못했습니다. 계정 설정에서 먼저 로그인하세요.": {
+    "en": "No sign-in credentials found. Sign in under Account settings first.",
+    "vi": "Không tìm thấy thông tin đăng nhập. Đăng nhập trong Cài đặt tài khoản trước."
+  },
+  "도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 도구 모음의 새로고침을 누르세요.": {
+    "en": "Use a local model that supports tool calling. Install a model, then click Refresh in the toolbar.",
+    "vi": "Sử dụng mô hình cục bộ hỗ trợ gọi công cụ. Cài đặt mô hình rồi nhấn Làm mới trên thanh công cụ."
   }
 }

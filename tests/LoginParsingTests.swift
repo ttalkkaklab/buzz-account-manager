@@ -19,6 +19,19 @@ import Foundation
         } catch {}
         print("Python runtime selection tests passed")
         let app = AppModel()
+        assert(app.section == .accounts, "Launch into account settings even when agents exist")
+        app.openAddAccount()
+        assert(app.accountSheetProvider == "codex", "All defaults to Codex")
+        app.accountFilter = "ollama"
+        app.openAddAccount()
+        assert(app.accountSheetProvider == "ollama", "Add account must follow the provider filter")
+        app.section = .agents
+        app.openAddAccount(provider: "claude")
+        assert(app.accountSheetProvider == "claude", "Agent editor must use its own selected provider")
+        app.section = .general
+        app.section = .accounts
+        assert(app.accountFilter == "ollama", "Rail navigation must preserve the account filter")
+        print("Settings navigation state tests passed")
         app.loginAccount = Account(id: "test", name: "test", provider: "codex", home: "/tmp/test", builtin: false, ready: false, models: [])
         app.loginRunning = true
         app.appendLoginChunk("BUZZ_LO")
