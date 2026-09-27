@@ -10,6 +10,8 @@ A native SwiftUI companion for [Buzz Desktop](https://github.com/block/buzz). Ma
 
 This is an independent community project, not an official app from Buzz or any AI provider.
 
+The [Windows preview](windows/README.md) provides Account settings, Agent settings, and General settings from a left icon rail. It supports English, Korean, and Vietnamese, provider filters, account removal/restoration, and ordered fallback accounts. See its verification limits before testing against a live Buzz installation.
+
 ## What you can do
 
 - Assign separate subscription accounts to individual agents while preserving their Buzz identity and team.

@@ -493,7 +493,7 @@ class Manager:
                                model=r.get('model') or '', effort=r.get('effort_level') or '',
                                account_id=aid, fallback_ids=profile.get('fallback_ids', {}).get(provider, []),
                                auto_fallback=profile.get('auto_fallback', {}).get(provider, False)))
-        return dict(revision=revision(raw), agents=agents,
+        return dict(revision=revision(raw), agents=agents, buzz_running=self.buzz_running(),
                     accounts=public_accounts, hidden_accounts=self.hidden_accounts(), monitor=read_json(self.root / 'monitor-state.json', {}),
                     cli_available={p: bool(shutil.which('claude-agent-acp' if p == 'ollama' else p, path=self.executable_path())) for p in PROVIDERS})
 
@@ -716,6 +716,13 @@ class Manager:
         except Exception:
             result['message'] = '잔량을 조회하지 못했습니다. 로그인 상태와 네트워크를 확인하세요.'
         return result
+
+    @staticmethod
+    def stop_buzz():
+        if os.name != 'nt':
+            raise ValueError('지원하지 않는 명령입니다.')
+        win.stop_buzz()
+        return {'ok': True}
 
     @staticmethod
     def buzz_running():
@@ -1081,6 +1088,8 @@ def main():
         result = manager.install_monitor()
     elif action == 'monitor':
         result = manager.monitor()
+    elif action == 'stop-buzz':
+        result = manager.stop_buzz()
     elif action == 'status':
         result = manager.snapshot()
     elif action == 'usage':
