@@ -674,8 +674,10 @@ struct AgentEditor: View {
             || fallbackIDs.filter { !$0.isEmpty } != (agent.fallback_ids ?? []).filter { !$0.isEmpty } || autoFallback != (agent.auto_fallback ?? false)
     }
     var statusMessage: String {
+        if app.busy && !app.message.isEmpty { return app.message }
+        if hasChanges { return L("저장하지 않은 변경이 있습니다. 저장하면 실행 중인 Buzz를 종료합니다.") }
         if !app.message.isEmpty { return app.message }
-        return hasChanges ? L("저장하지 않은 변경이 있습니다. 저장하면 실행 중인 Buzz를 종료합니다.") : L("설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.")
+        return L("설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.")
     }
     var body: some View {
         let _ = displayLocale
