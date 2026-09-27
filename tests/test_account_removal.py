@@ -35,12 +35,12 @@ class AccountRemovalTests(unittest.TestCase):
         with patch.object(b.Manager, 'account_ready', side_effect=AssertionError('Hidden auth lookup')):
             state = restarted.snapshot()
         self.assertEqual(state['accounts'], [])
-        self.assertEqual(state['hidden_defaults'], defaults)
+        self.assertEqual(state['hidden_accounts'], defaults)
         for account in defaults:
             with self.assertRaises(ValueError): restarted.account(account['id'])
-            restarted.restore_default(account['id'])
+            restarted.restore_account(account['id'])
             self.assertEqual(restarted.account(account['id']), account)
-        self.assertEqual(restarted.hidden_defaults(), [])
+        self.assertEqual(restarted.hidden_accounts(), [])
 
     def test_custom_account_removal_retains_credentials_and_other_accounts(self):
         account = self.manager.create_account('Fixture', 'codex')
@@ -50,8 +50,9 @@ class AccountRemovalTests(unittest.TestCase):
         self.manager.delete_account(account['id'])
         self.assertEqual(auth.read_bytes(), before)
         self.assertEqual(len(self.manager.accounts()), 4)
-        self.assertEqual(self.manager.hidden_defaults(), [])
-        with self.assertRaises(ValueError): self.manager.restore_default(account['id'])
+        self.assertEqual(self.manager.hidden_accounts(), [account])
+        self.manager.restore_account(account['id'])
+        self.assertEqual(self.manager.account(account['id']), account)
 
     def test_primary_and_fallback_references_reject_without_changing_registry(self):
         account = self.manager.create_account('Fixture', 'codex')
@@ -70,7 +71,7 @@ class AccountRemovalTests(unittest.TestCase):
         b.write_json(self.manager.store, [{'pubkey': 'a' * 64, 'name': 'Fixture', 'runtime': 'codex'}])
         with self.assertRaisesRegex(ValueError, '에이전트에 연결'):
             self.manager.delete_account('default-codex')
-        self.assertEqual(self.manager.hidden_defaults(), [])
+        self.assertEqual(self.manager.hidden_accounts(), [])
 
     def test_custom_ollama_models_work_when_default_is_hidden(self):
         account = self.manager.create_account('Fixture server', 'ollama', 'http://127.0.0.1:11435')

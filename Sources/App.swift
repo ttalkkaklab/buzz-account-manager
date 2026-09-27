@@ -37,7 +37,7 @@ struct Account: Codable, Identifiable {
     var isLocalCodex: Bool { provider == "codex" && !(endpoint ?? "").isEmpty }
     var isServer: Bool { provider == "ollama" || isLocalCodex }
 }
-struct HiddenDefault: Codable, Identifiable {
+struct HiddenAccount: Codable, Identifiable {
     var id: String
     var name: String
     var provider: String
@@ -62,7 +62,7 @@ struct Snapshot: Codable {
     var agents: [Agent]
     var accounts: [Account]
     var cli_available: [String: Bool]
-    var hidden_defaults: [HiddenDefault]? = nil
+    var hidden_accounts: [HiddenAccount]? = nil
     var monitor: MonitorState? = nil
 }
 struct AppFailure: LocalizedError {
@@ -686,11 +686,11 @@ struct AccountsView: View {
                         }
                     }.padding(22).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
                 }
-                if let hidden = app.snapshot?.hidden_defaults, !hidden.isEmpty {
-                    DisclosureGroup(L("숨긴 기본 계정")) {
+                if let hidden = app.snapshot?.hidden_accounts, !hidden.isEmpty {
+                    DisclosureGroup(L("숨긴 계정")) {
                         ForEach(hidden) { account in
                             HStack {
-                                Text(providerName(account.provider) + " · " + L(account.name))
+                                Text(providerName(account.provider) + " · " + (account.id.hasPrefix("default-") ? L(account.name) : account.name))
                                 Spacer()
                                 Button(L("복원")) { Task { await app.changeAccount(account.id, restore: true) } }
                                     .disabled(app.busy || app.loginRunning)
@@ -716,7 +716,7 @@ struct AccountsView: View {
             }
         } message: { account in
             Text(L("{0} 계정을 목록에서 제거합니다. 로그인 파일과 Keychain 정보는 보관합니다.", account.builtin ? L(account.name) : account.name)
-                 + (account.builtin ? "\n" + L("숨긴 기본 계정에서 언제든 복원할 수 있습니다.") : ""))
+                 + ("\n" + L("숨긴 계정에서 언제든 복원할 수 있습니다.")))
         }
     }
 }
