@@ -155,14 +155,6 @@
     "en": "Saved credentials are available.",
     "vi": "Đã có thông tin đăng nhập được lưu."
   },
-  "계정 탭에서 먼저 로그인하세요.": {
-    "en": "Sign in on the Accounts tab first.",
-    "vi": "Đăng nhập trong mục Tài khoản trước."
-  },
-  "도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 왼쪽 아래 새로고침을 누르세요.": {
-    "en": "Uses local models that support tool calls. Install a model, then click Refresh at the bottom left.",
-    "vi": "Sử dụng mô hình cục bộ hỗ trợ gọi công cụ. Cài đặt mô hình rồi nhấn Làm mới ở góc dưới bên trái."
-  },
   "예비 구독 계정 · 최대 3개": {
     "en": "Fallback accounts · up to 3",
     "vi": "Tài khoản dự phòng · tối đa 3"
@@ -591,10 +583,6 @@
     "en": "Could not connect to Ollama. Start the server and check its address.",
     "vi": "Không thể kết nối với Ollama. Khởi chạy máy chủ và kiểm tra địa chỉ."
   },
-  "로그인 정보를 찾지 못했습니다. 계정 탭에서 먼저 로그인하세요.": {
-    "en": "Credentials not found. Sign in on the Accounts tab first.",
-    "vi": "Không tìm thấy thông tin đăng nhập. Đăng nhập trong mục Tài khoản trước."
-  },
   "모델 ID를 확인하세요.": {
     "en": "Check the model ID.",
     "vi": "Kiểm tra ID mô hình."
@@ -708,7 +696,7 @@
     "vi": "Đã lưu cài đặt cho {0}. Hãy tự mở Buzz."
   },
   "앱을 닫아도 로그인한 Mac에서 동작합니다. 계정을 전환하면 실행 중인 Buzz를 종료합니다. Buzz는 직접 시작하세요.": {
-    "en": "Runs while you are logged into this Mac, even when this app is closed. Switching accounts quits Buzz if it is running. Start Buzz manually.",
+    "en": "Runs while you are signed in to this Mac, even when this app is closed. Switching accounts quits Buzz if it is running. Start Buzz manually.",
     "vi": "Hoạt động khi bạn đăng nhập vào máy Mac này, kể cả khi đóng ứng dụng. Chuyển tài khoản sẽ đóng Buzz nếu đang chạy. Hãy tự mở Buzz."
   },
   "설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.": {
@@ -795,10 +783,6 @@
     "en": "Remove this account from the list?",
     "vi": "Xóa tài khoản này khỏi danh sách?"
   },
-  "{0} 계정을 목록에서 제거합니다. 로그인 파일과 Keychain 정보는 보관합니다.": {
-    "en": "Remove {0} from the list. Sign-in files and Keychain entries will be kept.",
-    "vi": "Xóa {0} khỏi danh sách. Các tệp đăng nhập và thông tin Keychain sẽ được giữ lại."
-  },
   "숨긴 계정에서 언제든 복원할 수 있습니다.": {
     "en": "You can restore it anytime under Hidden accounts.",
     "vi": "Bạn có thể khôi phục bất kỳ lúc nào trong mục Tài khoản đã ẩn."
@@ -864,8 +848,8 @@
     "vi": "Lưu"
   },
   "계정 정보를 저장했습니다.": {
-    "en": "Account details saved.",
-    "vi": "Đã lưu thông tin tài khoản."
+    "en": "Account saved.",
+    "vi": "Đã lưu tài khoản."
   },
   "{0} 계정을 목록에서 제거합니다. 로그인 파일과 저장된 인증정보는 보관합니다.": {
     "en": "Remove {0} from the list. Sign-in files and saved credentials will be kept.",
@@ -908,7 +892,7 @@
     "vi": "Không tìm thấy tệp thực thi Buzz. Hãy cài Buzz cho Windows: "
   },
   "Node.js를 찾지 못했습니다. Buzz에서 실행 도구를 설치하세요.": {
-    "en": "Node.js was not found. Install the runtime tools in Buzz.",
+    "en": "Node.js not found. Install the runtime tools in Buzz.",
     "vi": "Không tìm thấy Node.js. Hãy cài công cụ chạy trong Buzz."
   },
   "CLI 실행 파일을 확인할 수 없습니다. Buzz에서 실행 도구를 다시 설치하세요: ": {
@@ -923,10 +907,6 @@
     "en": "About",
     "vi": "Thông tin"
   },
-  "도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 도구 모음의 새로고침을 누르세요.": {
-    "en": "Use local models that support tool calls. Install a model, then click Refresh in the toolbar.",
-    "vi": "Sử dụng mô hình cục bộ hỗ trợ gọi công cụ. Cài mô hình rồi nhấn Làm mới trên thanh công cụ."
-  },
   "계정 설정에서 먼저 로그인하세요.": {
     "en": "Sign in under Account settings first.",
     "vi": "Đăng nhập trong Cài đặt tài khoản trước."
@@ -938,5 +918,13 @@
   "숨긴 기본 계정에서 언제든 복원할 수 있습니다.": {
     "en": "You can restore it anytime under Hidden default accounts.",
     "vi": "Bạn có thể khôi phục bất kỳ lúc nào trong mục Tài khoản mặc định đã ẩn."
+  },
+  "로그인 정보를 찾지 못했습니다. 계정 설정에서 먼저 로그인하세요.": {
+    "en": "No sign-in credentials found. Sign in under Account settings first.",
+    "vi": "Không tìm thấy thông tin đăng nhập. Đăng nhập trong Cài đặt tài khoản trước."
+  },
+  "도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 도구 모음의 새로고침을 누르세요.": {
+    "en": "Use a local model that supports tool calling. Install a model, then click Refresh in the toolbar.",
+    "vi": "Sử dụng mô hình cục bộ hỗ trợ gọi công cụ. Cài đặt mô hình rồi nhấn Làm mới trên thanh công cụ."
   }
 }
