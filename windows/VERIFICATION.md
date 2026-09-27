@@ -13,7 +13,7 @@ The corrected §5.2 checklist has **19 rows**, not 17.
 | 5 | 373 | Content switching | Dock=Fill page panels | PASS: rail button clicks |
 | 6 | 374 | Provider filters | RadioButton group and visible account counts | PASS: Grok 1 → 0 → 1, empty state and restore |
 | 7 | 375 | Provider cards/account blocks | Render-Accounts vertical flow | PASS: all-provider screenshots and scrolling |
-| 8 | 376 | Usage view | Add-Quota | PASS with synthetic 15.5% fixture, date, low-usage text, details; live quota UNVERIFIED |
+| 8 | 376 | Usage view | Add-Quota | 부분 — `PBM_SETSTATE` 색 미반영. Synthetic 15.5% fixture, date, low-usage text and details verified; live quota UNVERIFIED |
 | 9 | 377 | Provider badges | Badge/Provider-Color | PASS: rendered shared colors and names |
 | 10 | 378 | Hidden default restore | Filtered disclosure and restore action | PASS: hidden default Grok restored |
 | 11 | 379 | Delete confirmation | MessageBox YesNo, Button2 | PASS: No preserves count; Yes hides account; auth file SHA unchanged |
@@ -58,3 +58,11 @@ The four added tests pass on Windows: catalog keys, mocked stop-buzz dispatch, p
 | osascript expectation | 2 | Tests hard-code /usr/bin/osascript; Windows uses powershell.exe | Platform-specific expectations |
 
 The latter two failures compare mocked `subprocess.run` arguments (`'powershell.exe' != '/usr/bin/osascript'`), directly showing no real process shutdown was dispatched by those tests. The temporary `Resources/agent-launcher.exe` byte fixture is **not a product binary and must not be committed**.
+
+## PR #7 review follow-up — M1/M2/M3
+
+- M1: backend calls restore the captured active form's original Enabled and UseWaitCursor values. In the isolated account-add modal, an invalid Ollama endpoint produced a real backend error/MessageBox; native IsWindowEnabled confirmed the main window stayed disabled afterward while the account modal was enabled. Closing the modal re-enabled the main window.
+- M2: agent selection queues Render-Content with BeginInvoke. Across 60 alternating native mouse clicks on two fixture agents, an additional SelectedIndexChanged handler observed the list still alive; after pumping messages the old list was disposed and the requested agent remained selected. No crash occurred during this run.
+- M3: row 8 is explicitly partial because PBM_SETSTATE coloring was not reflected by the themed progress bar.
+- The six environment variables remain isolated for every test child. DisplayLanguage was absent before and after restoration/readback; scheduled-task XML was byte-identical. Agent save, Buzz shutdown and monitor installation were not invoked.
+- Evidence runner and output: `.scratch/Senior_ACCOUNT_REVIEW_DRIVER_20260927.ps1` and `.scratch/Senior_ACCOUNT_REVIEW_SANDBOX_20260927/review-gui-result.txt` in the originating Windows workspace. Full Python suite remains 77 tests, 6 failures, 10 errors, 1 skip, matching the accepted portability baseline.

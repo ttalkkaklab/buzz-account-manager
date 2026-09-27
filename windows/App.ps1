@@ -37,7 +37,10 @@ function Message-Text { if ($script:messageValues.Count) { return L $script:mess
 function Show-Error($message) { [void][Windows.Forms.MessageBox]::Show($form,(Localize-Backend ([string]$message)),(L '설정을 확인해 주세요'),'OK','Error') }
 function Invoke-Backend([string]$action,$body=$null) {
  if ($script:busy) { throw (L '다른 요청을 처리하고 있습니다.') }
- $script:busy=$true; $form.UseWaitCursor=$true; $form.Enabled=$false; $process=$null
+ $requestForm=[Windows.Forms.Form]::ActiveForm
+ if ($null -eq $requestForm) { $requestForm=$form }
+ $wasEnabled=$requestForm.Enabled; $wasWaitCursor=$requestForm.UseWaitCursor
+ $script:busy=$true; $requestForm.UseWaitCursor=$true; $requestForm.Enabled=$false; $process=$null
  try {
   $info=New-Object Diagnostics.ProcessStartInfo
   $info.FileName="$PSScriptRoot\runtime\python.exe"; $info.Arguments='-X utf8 "'+"$PSScriptRoot\backend.py"+'" '+$action
@@ -57,7 +60,10 @@ function Invoke-Backend([string]$action,$body=$null) {
    if ($result.error) { throw [string]$result.error }; throw (L '설정을 읽지 못했습니다. 다시 시도해 주세요.')
   }
   return $result
- } finally { if ($process) { $process.Dispose() }; $script:busy=$false; $form.UseWaitCursor=$script:saving; $form.Enabled=(-not $script:saving) }
+ } finally {
+  if ($process) { $process.Dispose() }; $script:busy=$false
+  if (-not $requestForm.IsDisposed) { $requestForm.UseWaitCursor=$wasWaitCursor; $requestForm.Enabled=$wasEnabled }
+ }
 }
 function Label-At($parent,$text,$x,$y,$width=700,$height=26,$size=10) {
  $c=New-Object Windows.Forms.Label; $c.Text=$text; $c.SetBounds($x,$y,$width,$height)
@@ -371,7 +377,12 @@ function Render-Agents {
   [void](Label-At $editor (L '에이전트를 선택하세요') 24 24 550 40 20)
   [void](Label-At $editor (L 'Buzz에 등록된 에이전트가 왼쪽에 표시됩니다.') 24 80 550 60); return
  }
- $list.Add_SelectedIndexChanged({ if ($this.SelectedItems.Count -and $this.SelectedItems[0].Tag -ne $script:agentId) { $script:agentId=$this.SelectedItems[0].Tag; Render-Content } })
+ $list.Add_SelectedIndexChanged({
+  if ($this.SelectedItems.Count -and $this.SelectedItems[0].Tag -ne $script:agentId) {
+   $script:agentId=$this.SelectedItems[0].Tag
+   [void]$this.BeginInvoke([Action]{ if (-not $form.IsDisposed) { Render-Content } })
+  }
+ })
  $stack=Stack $editor 730; $stack.Location=New-Object Drawing.Point(24,24)
  $head=Card $stack 124 730; [void](Label-At $head $a.name 22 12 465 42 20); Badge $head $a.provider 540 18
  [void](Label-At $head (L '구독 계정과 생각의 깊이를 선택하세요.') 22 58 680 26)
