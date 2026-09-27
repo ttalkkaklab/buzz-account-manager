@@ -27,7 +27,7 @@ cat > "$BUILD/Contents/Info.plist" <<'PLIST'
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>1.4.5</string>
-<key>CFBundleVersion</key><string>11</string>
+<key>CFBundleVersion</key><string>12</string>
 <key>CFBundleDevelopmentRegion</key><string>en</string>
 <key>CFBundleLocalizations</key><array><string>ko</string><string>en</string><string>vi</string></array>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
