@@ -51,6 +51,7 @@ struct Agent: Codable, Identifiable {
     var account_id: String
     var fallback_ids: [String]? = nil
     var auto_fallback: Bool? = nil
+    var account_connection_lost: Bool? = nil
 }
 struct MonitorState: Codable {
     var checked_at: String?
@@ -675,6 +676,7 @@ struct AgentEditor: View {
     }
     var statusMessage: String {
         if app.busy && !app.message.isEmpty { return app.message }
+        if agent.account_connection_lost == true { return L("저장한 계정의 실행 연결이 끊겼습니다. 계정을 확인하고 설정 저장을 누르세요.") }
         if hasChanges { return L("저장하지 않은 변경이 있습니다. 저장하면 실행 중인 Buzz를 종료합니다.") }
         if !app.message.isEmpty { return app.message }
         return L("설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.")
@@ -687,6 +689,10 @@ struct AgentEditor: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         header
+                        if agent.account_connection_lost == true {
+                            Label(L("저장한 계정의 실행 연결이 끊겼습니다. 계정을 확인하고 설정 저장을 누르세요."), systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                        }
                         if columns {
                             HStack(alignment: .top, spacing: 24) {
                                 settingsCard.frame(maxWidth: .infinity)

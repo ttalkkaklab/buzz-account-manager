@@ -934,5 +934,17 @@
   "저장하지 않은 변경이 있습니다. 저장하면 실행 중인 Buzz를 종료합니다.": {
     "en": "You have unsaved changes. Saving quits Buzz if it is running.",
     "vi": "Có thay đổi chưa lưu. Lưu sẽ đóng Buzz nếu đang chạy."
+  },
+  "저장한 계정의 실행 연결이 끊겼습니다. 계정을 확인하고 설정 저장을 누르세요.": {
+    "en": "The saved account is disconnected from Buzz. Check the account and click Save settings.",
+    "vi": "Tài khoản đã lưu bị ngắt kết nối với Buzz. Kiểm tra tài khoản rồi nhấn Lưu cài đặt."
+  },
+  "저장한 서비스와 실행 도구가 다릅니다. 계정 설정을 다시 저장하세요.": {
+    "en": "The runtime differs from the saved service. Save the account settings again.",
+    "vi": "Công cụ chạy khác với dịch vụ đã lưu. Vui lòng lưu lại cài đặt tài khoản."
+  },
+  "실행할 서비스의 계정이 지정되지 않았습니다. 계정 설정을 다시 저장하세요.": {
+    "en": "No account is assigned to this service. Save the account settings again.",
+    "vi": "Chưa chỉ định tài khoản cho dịch vụ này. Vui lòng lưu lại cài đặt tài khoản."
   }
 }

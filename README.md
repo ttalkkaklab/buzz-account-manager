@@ -51,6 +51,8 @@ The old account moves into the selected fallback slot. Recovery of its quota alo
 
 **Settings are saved immediately. Saving agent settings or automatically switching accounts quits Buzz if it is running. Start Buzz manually to use the saved settings. Quitting can interrupt responses from all agents. Interrupted requests are not replayed.**
 
+Saving also pins the selected runtime. If the account launcher receives a different service or has no account assigned for that service, it refuses to start instead of using the default account. If Buzz's launcher setting has been replaced, the manager shows the saved account with a disconnected warning; check the selection and save again to reconnect it. Reading settings does not repair or restart agents automatically. Existing assignments need to be saved again to update their installed launcher backend.
+
 ## Local data and credentials
 
 The app uses the provider CLI’s authentication storage. Added accounts have separate directories and CLI sessions. The default CLI account is preserved.
