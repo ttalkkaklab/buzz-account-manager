@@ -130,7 +130,10 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
     @Published var busy = false
     @Published var message = ""
     @Published var error = ""
+    @Published var section: SettingsSection = .accounts
     @Published var accountSheet = false
+    @Published var accountSheetProvider = "codex"
+    @Published var editAccount: Account?
     @Published var accountFilter = "all"
     @Published var loginAccount: Account?
     @Published var loginOutput = ""
@@ -176,7 +179,27 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
         defer { busy = false }
         do {
             snapshot = try JSONDecoder().decode(Snapshot.self, from: await callBackend("status"))
-            if selection.isEmpty { selection = snapshot?.agents.first?.id ?? "accounts" }
+            if !(snapshot?.agents.contains(where: { $0.id == selection }) ?? false) {
+                selection = snapshot?.agents.first?.id ?? ""
+            }
+        } catch { self.error = error.localizedDescription }
+    }
+    func openAddAccount(provider: String? = nil) {
+        accountSheetProvider = provider ?? (accountFilter == "all" ? "codex" : accountFilter)
+        accountSheet = true
+    }
+    func updateAccount(_ account: Account, name: String, endpoint: String) async {
+        guard !busy, !loginRunning else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            var payload = ["account_id": account.id, "name": name]
+            if account.provider == "ollama" { payload["endpoint"] = endpoint }
+            _ = try await callBackend("update", payload: payload)
+            usage.removeValue(forKey: account.id)
+            snapshot = try JSONDecoder().decode(Snapshot.self, from: await callBackend("status"))
+            editAccount = nil
+            message = L("계정 정보를 저장했습니다.")
         } catch { self.error = error.localizedDescription }
     }
     func changeAccount(_ id: String, restore: Bool = false) async {
@@ -350,79 +373,241 @@ struct ProviderBadge: View {
             .background(providerColor(provider).opacity(0.10), in: Capsule())
     }
 }
+enum SettingsSection: String, CaseIterable {
+    case accounts, agents, general
+    var title: String {
+        switch self {
+        case .accounts: return "계정 설정"
+        case .agents: return "에이전트 설정"
+        case .general: return "일반 설정"
+        }
+    }
+    var caption: String {
+        switch self {
+        case .accounts: return "계정"
+        case .agents: return "에이전트"
+        case .general: return "일반"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .accounts: return "key.horizontal"
+        case .agents: return "person.2"
+        case .general: return "gearshape"
+        }
+    }
+    var shortcut: KeyEquivalent {
+        switch self {
+        case .accounts: return "1"
+        case .agents: return "2"
+        case .general: return "3"
+        }
+    }
+}
+struct RailButtonStyle: ButtonStyle {
+    var selected: Bool
+    @State private var hovering = false
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(width: 60, height: 56)
+            .background(selected ? Color.teal.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(configuration.isPressed ? 0.10 : hovering ? 0.05 : 0)))
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .onHover { hovering = $0 }
+    }
+}
+// NSWindow sizes include the title/toolbar; a SwiftUI minHeight would add
+// those pixels on top of the required 720-point minimum window height.
+struct SettingsWindowSize: NSViewRepresentable {
+    final class WindowProbe: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.minSize = NSSize(width: 1080, height: 720)
+        }
+    }
+    func makeNSView(context: Context) -> WindowProbe { WindowProbe() }
+    func updateNSView(_ view: WindowProbe, context: Context) {
+        view.window?.minSize = NSSize(width: 1080, height: 720)
+    }
+}
 struct ContentView: View {
     @StateObject var app = AppModel()
     @AppStorage("displayLanguage") private var displayLanguage = "system"
     var body: some View {
-        NavigationSplitView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 10) {
-                    Image("AppIcon").resizable().interpolation(.high).frame(width: 36, height: 36).accessibilityLabel(L("딸깍맨"))
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(L("Buzz 계정 관리")).font(.headline)
-                        Text(L("이 Mac의 에이전트")).font(.caption).foregroundStyle(.secondary)
-                    }
-                }.padding(22)
-                List(selection: $app.selection) {
-                    Section(L("에이전트")) {
-                        ForEach(app.snapshot?.agents ?? []) { agent in
-                            HStack(spacing: 10) {
-                                Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(providerColor(agent.provider))
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(agent.name).font(.system(size: 13, weight: .medium))
-                                    Text(providerName(agent.provider)).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }.padding(.vertical, 6).tag(agent.id)
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                Image(nsImage: NSImage(contentsOfFile: Bundle.main.path(forResource: "AppIcon", ofType: "png") ?? "") ?? NSImage())
+                    .resizable().interpolation(.high).frame(width: 32, height: 32)
+                    .help(L("Buzz 계정 관리")).accessibilityLabel(L("Buzz 계정 관리"))
+                    .padding(.top, 16).padding(.bottom, 16)
+                VStack(spacing: 6) {
+                    ForEach(SettingsSection.allCases, id: \.self) { section in
+                        if section == .general { Spacer(minLength: 6) }
+                        Button { app.section = section } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: section.symbol + (app.section == section ? ".fill" : ""))
+                                    .font(.system(size: 20, weight: .medium))
+                                Text(L(section.caption)).font(.system(size: 10, weight: .medium)).lineLimit(1)
+                            }.foregroundStyle(app.section == section ? Color.primary : Color.secondary)
                         }
+                        .buttonStyle(RailButtonStyle(selected: app.section == section))
+                        .help(L(section.title)).accessibilityLabel(L(section.title))
+                        .accessibilityIdentifier("rail-" + section.rawValue)
+                        .accessibilityAddTraits(app.section == section ? [.isSelected] : [])
+                        .keyboardShortcut(section.shortcut, modifiers: .command)
                     }
-                    Section {
-                        Label(L("구독 계정"), systemImage: "key.horizontal").padding(.vertical, 8).tag("accounts")
-                    }
-                }.listStyle(.sidebar)
-                Divider()
-                HStack {
-                    Label(L("로컬 설정"), systemImage: "internaldrive").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button { Task { await app.refresh() } } label: { Image(systemName: "arrow.clockwise") }
-                        .buttonStyle(.plain).help(L("새로고침")).disabled(app.busy)
-                }.padding(18)
-                Picker(L("언어"), selection: $displayLanguage) {
-                    Text(L("시스템 설정")).tag("system")
-                    Text("한국어").tag("ko")
-                    Text("English").tag("en")
-                    Text("Tiếng Việt").tag("vi")
-                }.padding(.horizontal, 18).padding(.bottom, 18)
-            }.navigationSplitViewColumnWidth(min: 220, ideal: 245, max: 290)
-        } detail: {
-            if let snapshot = app.snapshot {
-                if app.selection == "accounts" {
+                }.padding(.bottom, 16)
+            }.frame(width: 72).frame(maxHeight: .infinity)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .overlay(alignment: .trailing) { Rectangle().fill(Color.primary.opacity(0.06)).frame(width: 1) }
+            if app.section == .general {
+                GeneralSettingsView(displayLanguage: $displayLanguage)
+            } else if let snapshot = app.snapshot {
+                if app.section == .accounts {
                     AccountsView(app: app, accounts: snapshot.accounts)
-                } else if let agent = snapshot.agents.first(where: { $0.id == app.selection }) {
-                    AgentEditor(app: app, agent: agent, snapshot: snapshot).id(agent.id + snapshot.revision + agent.account_id)
                 } else {
-                    ContentUnavailableView(L("에이전트를 선택하세요"), systemImage: "person.crop.circle", description: Text(L("Buzz에 등록된 에이전트가 왼쪽에 표시됩니다.")))
+                    AgentsSettingsView(app: app, snapshot: snapshot)
                 }
             } else {
                 VStack(spacing: 14) {
                     if app.busy { ProgressView() }
                     Text(app.busy ? L("Buzz 설정을 읽는 중…") : L("Buzz 설정을 불러오세요.")).foregroundStyle(.secondary)
-                    Button(L("새로고침")) { Task { await app.refresh() } }
+                    Button(L("새로고침")) { Task { await app.refresh() } }.disabled(app.busy)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .background(Color(nsColor: .windowBackgroundColor))
         .environment(\.locale, Locale(identifier: AppLanguage.resolve(displayLanguage)))
-        .frame(minWidth: 1000, minHeight: 720)
+        .frame(minWidth: 1080)
+        .background(SettingsWindowSize().frame(width: 0, height: 0))
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { Task { await app.refresh() } } label: { Label(L("새로고침"), systemImage: "arrow.clockwise") }
+                    .help(L("새로고침")).accessibilityIdentifier("refresh-settings")
+                    .disabled(app.busy).keyboardShortcut("r", modifiers: .command)
+            }
+        }
         .task { await app.refresh() }
         .onChange(of: displayLanguage) { _, _ in
             for window in NSApplication.shared.windows where window.sheetParent == nil {
                 window.title = L("Buzz 계정 관리")
             }
         }
-        .sheet(isPresented: $app.accountSheet) { AddAccountView(app: app) }
+        .sheet(isPresented: $app.accountSheet) { AddAccountView(app: app, initialProvider: app.accountSheetProvider) }
+        .sheet(item: $app.editAccount) { account in EditAccountView(app: app, account: account).interactiveDismissDisabled(app.busy) }
         .sheet(item: $app.loginAccount) { account in LoginView(app: app, account: account).interactiveDismissDisabled(app.loginRunning) }
         .alert(L("설정을 확인해 주세요"), isPresented: Binding(get: { !app.error.isEmpty }, set: { if !$0 { app.error = "" } })) {
             Button(L("확인")) { app.error = "" }
         } message: { Text(localizedBackend(app.error)) }
+    }
+}
+struct AgentsSettingsView: View {
+    @ObservedObject var app: AppModel
+    let snapshot: Snapshot
+    var body: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("에이전트")).font(.headline)
+                    Text(L("이 Mac의 에이전트")).font(.caption).foregroundStyle(.secondary)
+                }.padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 8)
+                if snapshot.agents.isEmpty {
+                    Text(L("등록된 에이전트가 없습니다. Buzz에서 에이전트를 만든 뒤 새로고침하세요."))
+                        .font(.caption).foregroundStyle(.secondary).padding(16)
+                    Spacer()
+                } else {
+                    List(selection: $app.selection) {
+                        ForEach(snapshot.agents) { agent in
+                            HStack(spacing: 10) {
+                                Image(systemName: "person.crop.circle.fill").font(.title2).foregroundStyle(providerColor(agent.provider))
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(agent.name).font(.system(size: 13, weight: .medium))
+                                    Text(providerName(agent.provider)).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }.frame(height: 44).tag(agent.id)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+                        }
+                    }.listStyle(.sidebar).environment(\.defaultMinListRowHeight, 44)
+                }
+            }.frame(width: 260).frame(maxHeight: .infinity, alignment: .top)
+                .overlay(alignment: .trailing) { Rectangle().fill(Color.primary.opacity(0.06)).frame(width: 1) }
+            if let agent = snapshot.agents.first(where: { $0.id == app.selection }) {
+                AgentEditor(app: app, agent: agent, snapshot: snapshot).id(agent.id + snapshot.revision + agent.account_id)
+            } else {
+                ContentUnavailableView(L("에이전트를 선택하세요"), systemImage: "person.crop.circle", description: Text(L("Buzz에 등록된 에이전트가 왼쪽에 표시됩니다.")))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+}
+struct GeneralSettingsView: View {
+    @Environment(\.locale) private var displayLocale
+    @Binding var displayLanguage: String
+    private var home: String { ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory() }
+    var body: some View {
+        let _ = displayLocale
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Text(L("일반 설정")).font(.system(size: 28, weight: .bold))
+                card {
+                    Picker(L("언어"), selection: $displayLanguage) {
+                        Text(L("시스템 설정")).tag("system")
+                        Text("한국어").tag("ko")
+                        Text("English").tag("en")
+                        Text("Tiếng Việt").tag("vi")
+                    }.frame(maxWidth: 360, alignment: .leading)
+                }
+                card {
+                    Text(L("로컬 설정")).font(.headline)
+                    Text(home + "/.config/buzz-agents/account-manager.json")
+                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled)
+                    Text(home + "/Library/Application Support/xyz.block.buzz.app/agents/managed-agents.json")
+                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary).textSelection(.enabled)
+                    Text(L("계정 정보는 이 컴퓨터에 저장합니다. 설치 파일에는 사용자 계정이나 인증정보가 없습니다."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                card {
+                    Text(L("버전 {0}", Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"))
+                    Text(L("Buzz 계정 관리")).foregroundStyle(.secondary)
+                }
+            }.padding(32).frame(maxWidth: 890, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12, content: content)
+            .frame(maxWidth: .infinity, alignment: .leading).padding(24)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+    }
+}
+struct EditAccountView: View {
+    @Environment(\.locale) private var displayLocale
+    @ObservedObject var app: AppModel
+    let account: Account
+    @State private var name: String
+    @State private var endpoint: String
+    init(app: AppModel, account: Account) {
+        self.app = app; self.account = account
+        _name = State(initialValue: account.name)
+        _endpoint = State(initialValue: account.endpoint ?? "")
+    }
+    var body: some View {
+        let _ = displayLocale
+        VStack(alignment: .leading, spacing: 22) {
+            Text(L("계정 정보 수정")).font(.title2.bold())
+            TextField(L("계정 이름"), text: $name).textFieldStyle(.roundedBorder).accessibilityIdentifier("edit-account-name")
+            if account.provider == "ollama" {
+                TextField(L("Ollama 서버 주소"), text: $endpoint).textFieldStyle(.roundedBorder).accessibilityIdentifier("edit-account-endpoint")
+            }
+            HStack {
+                Button(L("취소")) { app.editAccount = nil }.keyboardShortcut(.cancelAction).disabled(app.busy)
+                Spacer()
+                Button(L("저장")) { Task { await app.updateAccount(account, name: name, endpoint: endpoint) } }
+                    .buttonStyle(.borderedProminent).tint(.teal).keyboardShortcut(.defaultAction)
+                    .disabled(app.busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 80)
+                    .accessibilityIdentifier("save-account-details")
+            }
+        }.padding(30).frame(width: 480)
     }
 }
 struct AgentEditor: View {
@@ -520,16 +705,16 @@ struct AgentEditor: View {
                                     customModel = false
                                 }
                             }
-                        Button { app.accountSheet = true } label: { Label(L("계정 추가"), systemImage: "plus") }
+                        Button { app.openAddAccount(provider: provider) } label: { Label(L("계정 추가"), systemImage: "plus") }
                     }
                     if let account = account {
-                        Label(account.isServer ? (account.ready ? L("서버 연결됨") : L("서버 연결 필요")) : (account.ready ? L("저장된 로그인 정보가 있습니다.") : L("계정 탭에서 먼저 로그인하세요.")),
+                        Label(account.isServer ? (account.ready ? L("서버 연결됨") : L("서버 연결 필요")) : (account.ready ? L("저장된 로그인 정보가 있습니다.") : L("계정 설정에서 먼저 로그인하세요.")),
                               systemImage: account.ready ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark")
                             .font(.caption).foregroundStyle(account.ready ? Color.secondary : Color.orange)
                     }
                     if account?.isServer == true {
                         Text(account?.endpoint ?? "http://127.0.0.1:11434").font(.caption).foregroundStyle(.secondary)
-                        Text(L("도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 왼쪽 아래 새로고침을 누르세요."))
+                        Text(L("도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 도구 모음의 새로고침을 누르세요."))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Divider()
@@ -635,9 +820,10 @@ struct AccountsView: View {
                     }
                     Spacer()
                     Button(L("잔량 새로고침")) { app.refreshAllUsage() }.disabled(!app.usageLoading.isEmpty)
-                    Button { app.accountSheet = true } label: { Label(L("계정 추가"), systemImage: "plus") }
+                    Button { app.openAddAccount() } label: { Label(L("계정 추가"), systemImage: "plus") }
                         .buttonStyle(.borderedProminent).tint(.teal).controlSize(.large)
                 }
+                if !app.message.isEmpty { Text(app.message).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
                 Picker(L("프로바이더 필터"), selection: $app.accountFilter) {
                     Text(L("전체") + " (\(accounts.count))").tag("all")
                     ForEach(providers, id: \.self) { provider in
@@ -647,7 +833,7 @@ struct AccountsView: View {
                 if visibleAccounts.isEmpty {
                     VStack(spacing: 12) {
                         Text(L("표시할 계정이 없습니다.")).foregroundStyle(.secondary)
-                        Button(L("계정 추가")) { app.accountSheet = true }
+                        Button(L("계정 추가")) { app.openAddAccount() }
                     }.frame(maxWidth: .infinity).padding(24)
                 }
                 ForEach(providers.filter { provider in visibleAccounts.contains { $0.provider == provider } }, id: \.self) { provider in
@@ -659,7 +845,16 @@ struct AccountsView: View {
                                 Image(systemName: account.builtin ? "laptopcomputer" : "person.crop.circle")
                                     .font(.title2).foregroundStyle(.secondary).frame(width: 32)
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(account.builtin ? L(account.name) : account.name).font(.headline)
+                                    HStack(spacing: 8) {
+                                        Text(account.builtin ? L(account.name) : account.name).font(.headline)
+                                        if !account.builtin {
+                                            Button { app.editAccount = account } label: { Image(systemName: "pencil") }
+                                                .buttonStyle(.plain).foregroundStyle(.secondary)
+                                                .help(L("계정 정보 수정")).accessibilityLabel(L("계정 정보 수정"))
+                                                .accessibilityIdentifier("edit-" + account.id)
+                                                .disabled(app.busy || app.loginRunning)
+                                        }
+                                    }
                                     Text(account.isServer ? (account.ready ? L("서버 연결됨") : L("서버 연결 필요")) : (account.ready ? L("로그인 정보 있음") : L("로그인 필요")))
                                         .font(.caption).foregroundStyle(account.ready ? Color.secondary : Color.orange)
                                     Text(account.endpoint ?? account.home.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
@@ -674,19 +869,21 @@ struct AccountsView: View {
                                     Text(L("기본 계정")).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
-                            Button(role: .destructive) { pendingDelete = account } label: {
-                                Label(L("계정 삭제"), systemImage: "trash")
-                            }.disabled(app.busy || app.loginRunning)
                             UsageView(usage: app.usage[account.id], loading: app.usageLoading.contains(account.id))
-                            Button(L("이 계정 잔량 새로고침")) { Task { await app.refreshUsage(account.id) } }
-                                .font(.caption)
-                                .disabled(app.usageLoading.contains(account.id) || (app.loginRunning && app.loginAccount?.id == account.id))
+                            HStack {
+                                Button(L("이 계정 잔량 새로고침")) { Task { await app.refreshUsage(account.id) } }
+                                    .disabled(app.usageLoading.contains(account.id) || (app.loginRunning && app.loginAccount?.id == account.id))
+                                Spacer()
+                                Button(role: .destructive) { pendingDelete = account } label: {
+                                    Label(L("계정 삭제"), systemImage: "trash")
+                                }.disabled(app.busy || app.loginRunning)
+                            }.font(.caption)
                             }.padding(.vertical, 9)
                             .task { if app.usage[account.id] == nil { await app.refreshUsage(account.id) } }
                         }
                     }.padding(22).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
                 }
-                if let hidden = app.snapshot?.hidden_accounts, !hidden.isEmpty {
+                if let hidden = app.snapshot?.hidden_accounts?.filter({ app.accountFilter == "all" || $0.provider == app.accountFilter }), !hidden.isEmpty {
                     DisclosureGroup(L("숨긴 계정")) {
                         ForEach(hidden) { account in
                             HStack {
@@ -704,7 +901,7 @@ struct AccountsView: View {
                     .font(.callout).foregroundStyle(.secondary)
                 Text(L("별도 계정은 CLI 설정과 세션도 분리됩니다. 로그인 만료·구독 한도·모델 접근 권한은 서비스가 실행 시 확인합니다."))
                     .font(.caption).foregroundStyle(.tertiary)
-            }.padding(32).frame(maxWidth: 890)
+            }.padding(32).frame(maxWidth: 890, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .alert(L("계정을 목록에서 삭제할까요?"), isPresented: Binding(
             get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }
@@ -715,7 +912,7 @@ struct AccountsView: View {
                 pendingDelete = nil
             }
         } message: { account in
-            Text(L("{0} 계정을 목록에서 제거합니다. 로그인 파일과 Keychain 정보는 보관합니다.", account.builtin ? L(account.name) : account.name)
+            Text(L("{0} 계정을 목록에서 제거합니다. 로그인 파일과 저장된 인증정보는 보관합니다.", account.builtin ? L(account.name) : account.name)
                  + ("\n" + L("숨긴 계정에서 언제든 복원할 수 있습니다.")))
         }
     }
@@ -786,10 +983,14 @@ struct AddAccountView: View {
     @Environment(\.locale) private var displayLocale
     @ObservedObject var app: AppModel
     @State var name = ""
-    @State var provider = "codex"
+    @State var provider: String
     @State var endpoint = "http://127.0.0.1:11434"
     @State var localCodex = false
     @State var codexEndpoint = "http://127.0.0.1:11235"
+    init(app: AppModel, initialProvider: String = "codex") {
+        self.app = app
+        _provider = State(initialValue: initialProvider)
+    }
     var serverAccount: Bool { provider == "ollama" || (provider == "codex" && localCodex) }
     var body: some View {
         let _ = displayLocale
@@ -904,7 +1105,7 @@ struct LoginView: View {
     }
     var body: some Scene {
         WindowGroup(L("Buzz 계정 관리")) { ContentView() }
-            .defaultSize(width: 1080, height: 830)
+            .defaultSize(width: 1180, height: 830)
             .commands { CommandGroup(replacing: .newItem) {} }
     }
 }

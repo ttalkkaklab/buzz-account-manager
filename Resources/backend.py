@@ -738,7 +738,7 @@ class Manager:
         if a['provider'] == 'ollama' and not self.account_ready(a):
             raise ValueError('Ollama 서버에 연결하지 못했습니다. 서버를 실행하고 주소를 확인하세요.')
         if not self.account_ready(a):
-            raise ValueError('로그인 정보를 찾지 못했습니다. 계정 탭에서 먼저 로그인하세요.')
+            raise ValueError('로그인 정보를 찾지 못했습니다. 계정 설정에서 먼저 로그인하세요.')
         model = req['model'].strip()
         if not model or len(model) > 180 or not re.fullmatch(r'[A-Za-z0-9_.:/\[\]-]+', model):
             raise ValueError('모델 ID를 확인하세요.')
