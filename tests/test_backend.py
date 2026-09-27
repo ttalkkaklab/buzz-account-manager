@@ -51,15 +51,22 @@ class ManagerTests(unittest.TestCase):
                 self.assertNotIn(account, restarted.accounts())
                 self.assertIn(account, restarted.hidden_accounts())
                 self.assertIn(account, restarted.accounts(include_hidden=True))
-                with self.assertRaisesRegex(ValueError, '같은 이름'):
+                with self.assertRaises(ValueError) as create_error:
                     restarted.create_account('Restorable', provider, endpoint)
+                self.assertEqual(str(create_error.exception), '숨긴 계정 중에 같은 이름이 있습니다. 「숨긴 계정」에서 복원하거나 다른 이름을 쓰세요.')
                 other = restarted.create_account('Other', provider, endpoint)
-                with self.assertRaisesRegex(ValueError, '같은 이름'):
+                with self.assertRaises(ValueError) as update_error:
                     restarted.update_account(other['id'], 'Restorable')
+                self.assertEqual(str(update_error.exception), '숨긴 계정 중에 같은 이름이 있습니다. 「숨긴 계정」에서 복원하거나 다른 이름을 쓰세요.')
                 restarted.restore_account(account['id'])
                 self.assertEqual(restarted.account(account['id']), account)
                 self.assertEqual(auth.read_bytes(), before)
                 self.assertNotIn(account, restarted.hidden_accounts())
+                for operation in (lambda: restarted.create_account('Restorable', provider, endpoint),
+                                  lambda: restarted.update_account(other['id'], 'Restorable')):
+                    with self.assertRaises(ValueError) as visible_error:
+                        operation()
+                    self.assertEqual(str(visible_error.exception), '같은 서비스에 같은 이름의 계정이 있습니다.')
         data = b.read_json(self.manager.registry)
         data['hidden_defaults'] = ['default-grok']
         b.write_json(self.manager.registry, data)

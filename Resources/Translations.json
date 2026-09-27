@@ -810,5 +810,9 @@
   "계정을 복원했습니다.": {
     "en": "Account restored.",
     "vi": "Đã khôi phục tài khoản."
+  },
+  "숨긴 계정 중에 같은 이름이 있습니다. 「숨긴 계정」에서 복원하거나 다른 이름을 쓰세요.": {
+    "en": "A hidden account already uses this name. Restore it under Hidden accounts, or choose another name.",
+    "vi": "Một tài khoản đã ẩn đang dùng tên này. Hãy khôi phục trong mục Tài khoản đã ẩn hoặc chọn tên khác."
   }
 }

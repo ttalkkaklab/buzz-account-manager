@@ -514,8 +514,10 @@ class Manager:
                 raise ValueError('Local Codex context window must be a positive integer.')
         with self.lock():
             data = read_json(self.registry, {'version': 1, 'accounts': []})
-            if any(a['provider'] == provider and a['name'] == name for a in self.accounts(include_hidden=True)):
+            if any(a['provider'] == provider and a['name'] == name for a in self.accounts()):
                 raise ValueError('같은 서비스에 같은 이름의 계정이 있습니다.')
+            if any(a['provider'] == provider and a['name'] == name for a in self.hidden_accounts()):
+                raise ValueError('숨긴 계정 중에 같은 이름이 있습니다. 「숨긴 계정」에서 복원하거나 다른 이름을 쓰세요.')
             identity = provider + '-' + uuid.uuid4().hex[:12]
             folder = self.root / 'accounts' / identity
             folder.mkdir(parents=True, mode=0o700)
@@ -549,8 +551,11 @@ class Manager:
             if account['builtin']:
                 raise ValueError('기본 계정은 수정할 수 없습니다. 새 계정을 추가하세요.')
             if any(a['id'] != identity and a['provider'] == account['provider'] and a['name'] == name
-                   for a in self.accounts(include_hidden=True)):
+                   for a in self.accounts()):
                 raise ValueError('같은 서비스에 같은 이름의 계정이 있습니다.')
+            if any(a['id'] != identity and a['provider'] == account['provider'] and a['name'] == name
+                   for a in self.hidden_accounts()):
+                raise ValueError('숨긴 계정 중에 같은 이름이 있습니다. 「숨긴 계정」에서 복원하거나 다른 이름을 쓰세요.')
             if account['provider'] == 'codex' and endpoint is not None and endpoint != account.get('endpoint', ''):
                 raise ValueError('Codex 서버 주소를 바꾸려면 새 로컬 계정을 추가하세요.')
             updated = dict(account, name=name)
