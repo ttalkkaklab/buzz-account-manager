@@ -766,5 +766,53 @@
   "로컬 Codex 계정에는 구독 계정 자동 전환을 설정할 수 없습니다.": {
     "en": "Local Codex accounts cannot use automatic subscription account switching.",
     "vi": "Tài khoản Codex cục bộ không hỗ trợ tự động chuyển tài khoản thuê bao."
+  },
+  "전체": {
+    "en": "All",
+    "vi": "Tất cả"
+  },
+  "프로바이더 필터": {
+    "en": "Provider filter",
+    "vi": "Lọc nhà cung cấp"
+  },
+  "표시할 계정이 없습니다.": {
+    "en": "No accounts to display.",
+    "vi": "Không có tài khoản để hiển thị."
+  },
+  "계정 삭제": {
+    "en": "Delete account",
+    "vi": "Xóa tài khoản"
+  },
+  "숨긴 계정": {
+    "en": "Hidden accounts",
+    "vi": "Tài khoản đã ẩn"
+  },
+  "복원": {
+    "en": "Restore",
+    "vi": "Khôi phục"
+  },
+  "계정을 목록에서 삭제할까요?": {
+    "en": "Remove this account from the list?",
+    "vi": "Xóa tài khoản này khỏi danh sách?"
+  },
+  "{0} 계정을 목록에서 제거합니다. 로그인 파일과 Keychain 정보는 보관합니다.": {
+    "en": "Remove {0} from the list. Sign-in files and Keychain entries will be kept.",
+    "vi": "Xóa {0} khỏi danh sách. Các tệp đăng nhập và thông tin Keychain sẽ được giữ lại."
+  },
+  "숨긴 계정에서 언제든 복원할 수 있습니다.": {
+    "en": "You can restore it anytime under Hidden accounts.",
+    "vi": "Bạn có thể khôi phục bất kỳ lúc nào trong mục Tài khoản đã ẩn."
+  },
+  "복원할 계정이 없습니다.": {
+    "en": "No account to restore.",
+    "vi": "Không có tài khoản để khôi phục."
+  },
+  "계정을 복원했습니다.": {
+    "en": "Account restored.",
+    "vi": "Đã khôi phục tài khoản."
+  },
+  "숨긴 계정 중에 같은 이름이 있습니다. 「숨긴 계정」에서 복원하거나 다른 이름을 쓰세요.": {
+    "en": "A hidden account already uses this name. Restore it under Hidden accounts, or choose another name.",
+    "vi": "Một tài khoản đã ẩn đang dùng tên này. Hãy khôi phục trong mục Tài khoản đã ẩn hoặc chọn tên khác."
   }
 }

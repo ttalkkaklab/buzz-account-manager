@@ -1,3 +1,4 @@
+import contextlib
 import importlib.util
 import json
 import os
@@ -37,6 +38,75 @@ class ManagerTests(unittest.TestCase):
     def request(self):
         return dict(agent_id=self.pk, account_id='default-codex', provider='codex', model='test-model', effort='high',
                     revision=b.revision(self.manager.store.read_bytes()))
+    def test_custom_account_hide_restore_preserves_metadata_and_credentials(self):
+        for provider in ('codex', 'claude', 'grok', 'ollama'):
+            with self.subTest(provider=provider):
+                endpoint = 'http://127.0.0.1:11436' if provider in ('codex', 'ollama') else None
+                account = self.manager.create_account('Restorable', provider, endpoint)
+                auth = Path(account['home']) / 'auth.json'
+                auth.write_text('{"fixture":"preserve"}')
+                before = auth.read_bytes()
+                self.manager.delete_account(account['id'])
+                restarted = b.Manager(self.home)
+                self.assertNotIn(account, restarted.accounts())
+                self.assertIn(account, restarted.hidden_accounts())
+                self.assertIn(account, restarted.accounts(include_hidden=True))
+                with self.assertRaises(ValueError) as create_error:
+                    restarted.create_account('Restorable', provider, endpoint)
+                self.assertEqual(str(create_error.exception), '숨긴 계정 중에 같은 이름이 있습니다. 「숨긴 계정」에서 복원하거나 다른 이름을 쓰세요.')
+                other = restarted.create_account('Other', provider, endpoint)
+                with self.assertRaises(ValueError) as update_error:
+                    restarted.update_account(other['id'], 'Restorable')
+                self.assertEqual(str(update_error.exception), '숨긴 계정 중에 같은 이름이 있습니다. 「숨긴 계정」에서 복원하거나 다른 이름을 쓰세요.')
+                restarted.restore_account(account['id'])
+                self.assertEqual(restarted.account(account['id']), account)
+                self.assertEqual(auth.read_bytes(), before)
+                self.assertNotIn(account, restarted.hidden_accounts())
+                for operation in (lambda: restarted.create_account('Restorable', provider, endpoint),
+                                  lambda: restarted.update_account(other['id'], 'Restorable')):
+                    with self.assertRaises(ValueError) as visible_error:
+                        operation()
+                    self.assertEqual(str(visible_error.exception), '같은 서비스에 같은 이름의 계정이 있습니다.')
+        data = b.read_json(self.manager.registry)
+        data['hidden_defaults'] = ['default-grok']
+        b.write_json(self.manager.registry, data)
+        self.assertIn('default-grok', [a['id'] for a in self.manager.hidden_accounts()])
+        self.manager.restore_account('default-grok')
+        self.assertEqual(self.manager.account('default-grok')['id'], 'default-grok')
+
+    def test_apply_rechecks_primary_and_fallback_after_validation_under_lock(self):
+        account = self.manager.create_account('Race target', 'codex')
+        b.write_json(Path(account['home']) / 'auth.json',
+                     {'auth_mode': 'chatgpt', 'tokens': {'access_token': 'test-only'}})
+        original_lock = self.manager.lock
+        for target in ('default-codex', account['id'], 'fallback'):
+            with self.subTest(target=target):
+                b.write_json(self.manager.registry, {'version': 1, 'accounts': [account]})
+                req = self.request()
+                if target == 'fallback':
+                    req['fallback_ids'] = [account['id']]
+                else:
+                    req['account_id'] = target
+                hidden_id = account['id'] if target == 'fallback' else target
+                before = self.manager.store.read_bytes()
+                @contextlib.contextmanager
+                def hide_before_lock():
+                    # Simulate another process hiding an account after validate
+                    # and before apply obtains the shared manager lock.
+                    data = b.read_json(self.manager.registry)
+                    data['hidden_accounts'] = [hidden_id]
+                    b.write_json(self.manager.registry, data)
+                    with original_lock():
+                        yield
+                with patch.object(self.manager, 'lock', side_effect=hide_before_lock), \
+                     patch.object(self.manager, 'validate', wraps=self.manager.validate) as validate:
+                    with self.assertRaisesRegex(ValueError, '계정이 없습니다. 새로고침해 주세요.'):
+                        self.manager.apply(req)
+                    validate.assert_called_once_with(req)
+                self.assertEqual(self.manager.store.read_bytes(), before)
+                self.assertFalse((self.manager.root / ('agent-' + self.pk + '.json')).exists())
+                self.assertFalse((self.manager.root / 'backups').exists())
+
     def test_local_codex_ready_validate_apply_without_tokens(self):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         import threading
