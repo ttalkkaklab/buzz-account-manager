@@ -254,6 +254,7 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(updated[1]['system_prompt'], 'preserve instructions')
         self.assertEqual(updated[1]['agent_args'], ['--test-existing'])
         self.assertEqual(updated[0]['effort_level'], 'high')
+        self.assertEqual(updated[1]['agent_command_override'], updated[1]['agent_command'])
         self.assertEqual(updated[1]['env_vars'], {'KEEP_ME':'value'})
         self.assertTrue(Path(updated[1]['acp_command']).exists())
         for f in self.manager.root.glob('backups/*/*'):
@@ -361,7 +362,7 @@ class ManagerTests(unittest.TestCase):
                 continue
             a = self.manager.create_account('launch account', provider)
             path = self.manager.root / ('agent-' + self.pk + '.json')
-            profile = b.read_json(path);profile['account_ids'][provider] = a['id'];b.write_json(path, profile)
+            profile = b.read_json(path);profile['account_ids'][provider] = a['id'];profile['active_provider'] = provider;b.write_json(path, profile)
             env = dict(BUZZ_PRIVATE_KEY='test-identity', BUZZ_ACP_AGENT_COMMAND=command,
                        BUZZ_ACP_MODEL='selected', BUZZ_ACP_EFFORT_LEVEL='high', BUZZ_ACP_AGENT_ARGS='agent,stdio')
             with patch.dict(os.environ, env, clear=True), patch.object(os, 'execve') as execute:

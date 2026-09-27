@@ -463,6 +463,17 @@ class Manager:
             return read_json(self.root / (command.name[7:].removesuffix('.exe') + '.json'), {})
         return {}
 
+    def saved_profile(self, record):
+        """Recover this identity's saved selection even if Buzz lost its launcher."""
+        profile = self.read_profile(record)
+        if profile:
+            return profile
+        pubkey = record.get('pubkey', '')
+        if not re.fullmatch(r'[a-f0-9]{64}', pubkey):
+            return {}
+        profile = read_json(self.root / ('agent-' + pubkey + '.json'), {})
+        return profile if profile.get('pubkey') == pubkey else {}
+
     def active_agent_records(self, records=None):
         return (record for record in (read_json(self.store, []) if records is None else records)
                 if record.get('pubkey') and record.get('is_active', True))
@@ -479,11 +490,14 @@ class Manager:
                                         models=self.models(a['provider'], a['home'])))
         agents = []
         for r in self.active_agent_records(records):
-            profile = self.read_profile(r)
+            linked_profile = self.read_profile(r)
+            profile = self.saved_profile(r)
+            connection_lost = bool(profile) and not bool(linked_profile)
             provider = 'ollama' if profile.get('active_provider') == 'ollama' and r.get('runtime') == 'claude' else r.get('runtime') or 'codex'
+            if connection_lost:
+                provider = profile.get('active_provider', provider)
             if provider not in PROVIDERS:
                 continue
-            profile = self.read_profile(r)
             aid = profile.get('account_ids', {}).get(provider, 'default-' + provider)
             # Honor the earlier manually configured Codex directory, if present.
             legacy = profile.get('subscription_accounts', {}).get('codex')
@@ -493,7 +507,8 @@ class Manager:
                 aid = matched or 'unregistered'
             agents.append(dict(id=r['pubkey'], name=r['name'], provider=provider,
                                model=r.get('model') or '', effort=r.get('effort_level') or '',
-                               account_id=aid, fallback_ids=profile.get('fallback_ids', {}).get(provider, []),
+                               account_id=aid, account_connection_lost=connection_lost,
+                               fallback_ids=profile.get('fallback_ids', {}).get(provider, []),
                                auto_fallback=profile.get('auto_fallback', {}).get(provider, False)))
         return dict(revision=revision(raw), agents=agents, buzz_running=self.buzz_running(),
                     accounts=public_accounts, hidden_accounts=self.hidden_accounts(), monitor=read_json(self.root / 'monitor-state.json', {}),
@@ -573,7 +588,7 @@ class Manager:
         with self.lock():
             self.account(identity)
             for r in self.active_agent_records():
-                profile = self.read_profile(r)
+                profile = self.saved_profile(r)
                 provider = 'ollama' if profile.get('active_provider') == 'ollama' and r.get('runtime') == 'claude' else r.get('runtime') or 'codex'
                 implicit_default = 'default-' + provider if not profile.get('account_ids', {}).get(provider) else None
                 if identity == implicit_default or identity in profile.get('account_ids', {}).values() or any(identity in ids for ids in profile.get('fallback_ids', {}).values()):
@@ -789,7 +804,7 @@ class Manager:
             target = next((r for r in records if r.get('pubkey') == req['agent_id']), None)
             if target is None:
                 raise ValueError('에이전트가 더 이상 존재하지 않습니다.')
-            old_profile = self.read_profile(target)
+            old_profile = self.saved_profile(target)
             expected = req.get('expected_account_id')
             if expected and expected != old_profile.get('account_ids', {}).get(req['provider'], 'default-' + req['provider']) and target.get('runtime') == req['provider']:
                 raise ValueError('자동 전환으로 현재 계정이 바뀌었습니다. 새로고침 후 다시 저장하세요.')
@@ -801,10 +816,11 @@ class Manager:
             launcher = self.root / ('launch-' + slug + ('.exe' if os.name == 'nt' else ''))
             provider = req['provider']
             runtime = 'claude' if provider == 'ollama' else provider
+            agent_command = self.resolve_cli(CLI_COMMAND[provider])
             for r in targets:
                 r.update(runtime=runtime, model=req['model'].strip(), effort_level=req.get('effort') or None,
-                         provider=None, agent_command_override=None, acp_command=str(launcher),
-                         agent_command=self.resolve_cli(CLI_COMMAND[provider]),
+                         provider=None, agent_command_override=agent_command, acp_command=str(launcher),
+                         agent_command=agent_command,
                          agent_args=clean_model_args(r.get('agent_args', []) if r.get('runtime') == runtime else
                                      ['agent', 'stdio'] if provider == 'grok' else []),
                          mcp_command='buzz-dev-mcp' if provider in ('codex', 'ollama') else '')
@@ -1033,7 +1049,11 @@ class Manager:
             raise ValueError('이 실행 도구는 지원하지 않습니다.')
         if provider == 'claude' and profile.get('active_provider') == 'ollama':
             provider = 'ollama'
-        identity = profile.get('account_ids', {}).get(provider, 'default-' + provider)
+        if profile.get('active_provider') not in (None, provider):
+            raise ValueError('저장한 서비스와 실행 도구가 다릅니다. 계정 설정을 다시 저장하세요.')
+        identity = profile.get('account_ids', {}).get(provider)
+        if not identity:
+            raise ValueError('실행할 서비스의 계정이 지정되지 않았습니다. 계정 설정을 다시 저장하세요.')
         a = self.account(identity)
         if a['provider'] != provider:
             raise ValueError('서비스와 로그인 계정이 일치하지 않습니다.')
