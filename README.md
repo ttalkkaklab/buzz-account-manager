@@ -83,6 +83,7 @@ BUZZ_INSTALL=0 ./build.sh
 
 The bundle is written to `build/Buzz Account Manager.app`. Running `./build.sh` without `BUZZ_INSTALL=0` also installs it into `~/Applications`.
 The install stops when the build is older than the installed one, so an outdated checkout cannot replace a newer app. To install an older build on purpose, use `BUZZ_INSTALL_FORCE=1 ./build.sh`.
+The ZIP installer, `scripts/install_app.py`, applies the same downgrade check and accepts the same `BUZZ_INSTALL_FORCE=1` override.
 
 Tests cover account isolation, settings preservation, rollback, quota interpretation, automatic switching, login-code parsing, and all three translation catalogs. Provider protocols and Buzz’s local settings format can change; full account login and model execution require your own installed CLIs and subscriptions.
 

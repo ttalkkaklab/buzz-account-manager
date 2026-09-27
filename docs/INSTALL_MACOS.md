@@ -56,7 +56,8 @@ cd buzz-account-manager
 ditto -c -k --keepParent "build/Buzz Account Manager.app" ~/Desktop/BuzzAccountManager.zip
 ```
 
-받는 Mac에서 설치합니다. 저장소를 받지 않았다면 `scripts/install_app.py` 파일 하나만 같이 옮겨도 됩니다.
+받는 Mac에서 설치합니다. 저장소를 받지 않았다면 `scripts/install_app.py`와
+`scripts/version_guard.py` 두 파일을 같은 폴더에 같이 옮기면 됩니다.
 
 ```bash
 python3 scripts/install_app.py ~/Downloads/BuzzAccountManager.zip
@@ -64,6 +65,7 @@ python3 scripts/install_app.py ~/Downloads/BuzzAccountManager.zip
 
 스크립트가 서명을 검사한 뒤 `~/Applications`에 넣고, 이미 있던 앱은
 `~/.config/buzz-agents/app-backups/<날짜>/`로 옮겨 둡니다.
+ZIP 설치도 설치본보다 낮은 버전을 거부하며, 일부러 내릴 때는 명령 앞에 `BUZZ_INSTALL_FORCE=1`을 붙입니다.
 
 **아키텍처를 맞춰야 합니다.** `build.sh`에는 아키텍처 옵션이 없어서 빌드한 Mac에 맞는 바이너리가 나옵니다.
 Apple Silicon에서 만든 앱은 Intel Mac에서 열리지 않습니다. 계열이 다르면 옮기지 말고 방법 1로 각자 빌드하세요.
