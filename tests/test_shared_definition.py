@@ -57,7 +57,8 @@ class SharedDefinitionTests(unittest.TestCase):
         self.save(1)
         self.save(0)  # Repeated saves reuse the seat's definition.
         records = b.read_json(self.manager.store)
-        self.assertEqual(len(records), 4)
+        self.assertEqual(len(records), 5)
+        self.assertEqual(records[0], self.original[0])
         instances = [r for r in records if r.get('pubkey')]
         self.assertNotEqual(instances[0]['persona_id'], instances[1]['persona_id'])
         for i, record in enumerate(instances):
@@ -78,6 +79,31 @@ class SharedDefinitionTests(unittest.TestCase):
             self.assertEqual(actual['BUZZ_PRIVATE_KEY'], 'identity-' + str(i))
             self.assertEqual(actual['BUZZ_ACP_MODEL'], 'model-' + str(i))
             self.assertEqual(json.loads(actual['CODEX_CONFIG'])['model_reasoning_effort'], 'high')
+
+    def test_single_builtin_keeps_original_record_bytes_and_gets_dedicated_definition(self):
+        def first_record_bytes():
+            raw = self.manager.store.read_text()
+            start = raw.index('{')
+            _, end = json.JSONDecoder().raw_decode(raw, start)
+            return raw[start:end].encode('utf-8')
+
+        for slug, flag in [('builtin:fizz', True), ('builtin:fizz', False), ('legacy-built-in', True)]:
+            with self.subTest(slug=slug, is_builtin=flag):
+                definition = dict(self.original[0], slug=slug, is_builtin=flag)
+                record = dict(self.original[1], persona_id=slug)
+                b.write_json(self.manager.store, [definition, record])
+                before = first_record_bytes()
+                self.save()
+                saved = b.read_json(self.manager.store)
+                self.assertEqual(first_record_bytes(), before)
+                self.assertEqual(len(saved), 3)
+                self.assertRegex(saved[1]['persona_id'], r'^account-[0-9a-f]{32}$')
+                self.assertEqual(saved[2]['slug'], saved[1]['persona_id'])
+                self.assertEqual(saved[2]['acp_command'], saved[1]['acp_command'])
+                self.assertFalse(saved[2]['is_builtin'])
+                self.save()  # A dedicated non-builtin definition is reused.
+                self.assertEqual(first_record_bytes(), before)
+                self.assertEqual(len(b.read_json(self.manager.store)), 3)
 
     def test_inactive_sibling_is_also_protected(self):
         records = copy.deepcopy(self.original)

@@ -798,7 +798,8 @@ class Manager:
             raise ValueError('연결된 에이전트 정의가 없거나 중복되어 저장할 수 없습니다. Buzz에서 정의를 확인하세요.')
         definition = definitions[0]
         siblings = [r for r in records if r is not target and r.get('pubkey') and r.get('persona_id') == linked]
-        if not siblings:
+        builtin = definition.get('is_builtin') or linked.startswith('builtin:')
+        if not siblings and not builtin:
             return definition
         if definition.get('source_team') or definition.get('team_catalog_source'):
             raise ValueError('팀에서 관리하는 공통 정의는 자동으로 나눌 수 없습니다. Buzz에서 좌석 전용 정의를 먼저 연결하세요.')
