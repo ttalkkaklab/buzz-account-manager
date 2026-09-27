@@ -920,11 +920,19 @@
     "vi": "Bạn có thể khôi phục bất kỳ lúc nào trong mục Tài khoản mặc định đã ẩn."
   },
   "로그인 정보를 찾지 못했습니다. 계정 설정에서 먼저 로그인하세요.": {
-    "en": "No sign-in credentials found. Sign in under Account settings first.",
+    "en": "Credentials not found. Sign in under Account settings first.",
     "vi": "Không tìm thấy thông tin đăng nhập. Đăng nhập trong Cài đặt tài khoản trước."
   },
   "도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 도구 모음의 새로고침을 누르세요.": {
     "en": "Use a local model that supports tool calling. Install a model, then click Refresh in the toolbar.",
     "vi": "Sử dụng mô hình cục bộ hỗ trợ gọi công cụ. Cài đặt mô hình rồi nhấn Làm mới trên thanh công cụ."
+  },
+  "변경 취소": {
+    "en": "Discard changes",
+    "vi": "Hủy thay đổi"
+  },
+  "저장하지 않은 변경이 있습니다. 저장하면 실행 중인 Buzz를 종료합니다.": {
+    "en": "You have unsaved changes. Saving quits Buzz if it is running.",
+    "vi": "Có thay đổi chưa lưu. Lưu sẽ đóng Buzz nếu đang chạy."
   }
 }

@@ -124,6 +124,11 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
     }
 }
 
+struct CreatedAccountSelection: Equatable {
+    let agentID: String
+    let accountID: String
+}
+
 @MainActor final class AppModel: ObservableObject {
     @Published var snapshot: Snapshot?
     @Published var selection = ""
@@ -134,6 +139,9 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
     @Published var accountSheet = false
     @Published var accountSheetProvider = "codex"
     @Published var editAccount: Account?
+    @Published var createdAccountSelection: CreatedAccountSelection?
+    private var addingForAgent: String?
+    private var pendingCreatedAccount: CreatedAccountSelection?
     @Published var accountFilter = "all"
     @Published var loginAccount: Account?
     @Published var loginOutput = ""
@@ -185,6 +193,7 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
         } catch { self.error = error.localizedDescription }
     }
     func openAddAccount(provider: String? = nil) {
+        addingForAgent = section == .agents ? selection : nil
         accountSheetProvider = provider ?? (accountFilter == "all" ? "codex" : accountFilter)
         accountSheet = true
     }
@@ -267,11 +276,21 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
             accountSheet = false
             await refresh()
             if let id = object?["id"] as? String, let a = snapshot?.accounts.first(where: { $0.id == id }) {
-                if a.isServer { section = .accounts; await refreshUsage(a.id) }
-                else { startLogin(a) }
+                let target = addingForAgent.map { CreatedAccountSelection(agentID: $0, accountID: a.id) }
+                if a.isServer {
+                    createdAccountSelection = target
+                    await refreshUsage(a.id)
+                } else {
+                    pendingCreatedAccount = target
+                    startLogin(a)
+                }
             }
         } catch { self.error = error.localizedDescription }
         busy = false
+    }
+    func finishAccountLogin() {
+        createdAccountSelection = pendingCreatedAccount
+        pendingCreatedAccount = nil
     }
     func startLogin(_ account: Account) {
         guard !loginRunning, !account.isServer else { return }
@@ -342,6 +361,7 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
                            "fallback_ids": String(data: try JSONEncoder().encode(fallbackIDs), encoding: .utf8)!,
                            "auto_fallback": autoFallback ? "true" : "false", "expected_account_id": agent.account_id]
             _ = try await callBackend("validate", payload: payload)
+            #if !TESTING
             let running = NSWorkspace.shared.runningApplications.filter { $0.bundleURL?.path == "/Applications/Buzz.app" }
             if !running.isEmpty {
                 message = L("Buzz를 정상 종료하는 중…")
@@ -352,6 +372,7 @@ func callBackend(_ action: String, payload: [String: String]? = nil) async throw
                 }
                 guard running.allSatisfy({ $0.isTerminated }) else { throw AppFailure(message: L("Buzz가 아직 종료되지 않았습니다. 설정은 변경하지 않았습니다.")) }
             }
+            #endif
             message = L("설정을 백업하고 저장하는 중…")
             _ = try await callBackend("apply", payload: payload)
             message = L("{0} 설정을 저장했습니다. Buzz는 직접 시작하세요.", String(describing: agent.name))
@@ -495,7 +516,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $app.accountSheet) { AddAccountView(app: app, initialProvider: app.accountSheetProvider) }
         .sheet(item: $app.editAccount) { account in EditAccountView(app: app, account: account).interactiveDismissDisabled(app.busy) }
-        .sheet(item: $app.loginAccount) { account in LoginView(app: app, account: account).interactiveDismissDisabled(app.loginRunning) }
+        .sheet(item: $app.loginAccount, onDismiss: { app.finishAccountLogin() }) { account in LoginView(app: app, account: account).interactiveDismissDisabled(app.loginRunning) }
         .alert(L("설정을 확인해 주세요"), isPresented: Binding(get: { !app.error.isEmpty }, set: { if !$0 { app.error = "" } })) {
             Button(L("확인")) { app.error = "" }
         } message: { Text(localizedBackend(app.error)) }
@@ -550,11 +571,12 @@ struct GeneralSettingsView: View {
             VStack(alignment: .leading, spacing: 24) {
                 Text(L("일반 설정")).font(.system(size: 28, weight: .bold))
                 card {
-                    Picker(L("언어"), selection: $displayLanguage) {
-                        Text(L("시스템 설정")).tag("system")
-                        Text("한국어").tag("ko")
-                        Text("English").tag("en")
-                        Text("Tiếng Việt").tag("vi")
+                    HStack {
+                        Text(L("언어"))
+                        PopupField(title: L("언어"), selection: $displayLanguage, options: [
+                            PopupOption(id: "system", title: L("시스템 설정")), PopupOption(id: "ko", title: "한국어"),
+                            PopupOption(id: "en", title: "English"), PopupOption(id: "vi", title: "Tiếng Việt")
+                        ]).popupField()
                     }.frame(maxWidth: 360, alignment: .leading)
                 }
                 card {
@@ -600,10 +622,10 @@ struct EditAccountView: View {
                 TextField(L("Ollama 서버 주소"), text: $endpoint).textFieldStyle(.roundedBorder).accessibilityIdentifier("edit-account-endpoint")
             }
             HStack {
-                Button(L("취소")) { app.editAccount = nil }.keyboardShortcut(.cancelAction).disabled(app.busy)
+                Button(L("취소")) { app.editAccount = nil }.secondaryAction(.inline).keyboardShortcut(.cancelAction).disabled(app.busy)
                 Spacer()
                 Button(L("저장")) { Task { await app.updateAccount(account, name: name, endpoint: endpoint) } }
-                    .buttonStyle(.borderedProminent).tint(.teal).keyboardShortcut(.defaultAction)
+                    .primaryAction(.inline).keyboardShortcut(.defaultAction)
                     .disabled(app.busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 80)
                     .accessibilityIdentifier("save-account-details")
             }
@@ -624,7 +646,9 @@ struct AgentEditor: View {
     @State var customModel = false
 
     init(app: AppModel, agent: Agent, snapshot: Snapshot) {
-        self.app = app; self.agent = agent; self.snapshot = snapshot
+        self.app = app
+        self.agent = agent
+        self.snapshot = snapshot
         _provider = State(initialValue: agent.provider)
         _accountID = State(initialValue: agent.account_id)
         _model = State(initialValue: agent.model)
@@ -641,159 +665,249 @@ struct AgentEditor: View {
     var accounts: [Account] { snapshot.accounts.filter { $0.provider == provider } }
     var account: Account? { accounts.first { $0.id == accountID } }
     var choices: [ModelChoice] { account?.models ?? accounts.first?.models ?? [] }
-    var efforts: [String] { if provider == "ollama" { return [] }; return choices.first(where: { $0.id == model })?.efforts ?? ["low", "medium", "high", "xhigh", "max", "ultra"] }
+    var efforts: [String] {
+        if provider == "ollama" { return [] }
+        return choices.first(where: { $0.id == model })?.efforts ?? ["low", "medium", "high", "xhigh", "max", "ultra"]
+    }
+    var hasChanges: Bool {
+        provider != agent.provider || accountID != agent.account_id || model != agent.model || effort != agent.effort
+            || fallbackIDs.filter { !$0.isEmpty } != (agent.fallback_ids ?? []).filter { !$0.isEmpty } || autoFallback != (agent.auto_fallback ?? false)
+    }
+    var statusMessage: String {
+        if app.busy && !app.message.isEmpty { return app.message }
+        if hasChanges { return L("저장하지 않은 변경이 있습니다. 저장하면 실행 중인 Buzz를 종료합니다.") }
+        if !app.message.isEmpty { return app.message }
+        return L("설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.")
+    }
     var body: some View {
         let _ = displayLocale
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(agent.name).font(.system(size: 28, weight: .bold))
-                        Text(L("구독 계정과 생각의 깊이를 선택하세요.")).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    ProviderBadge(provider: agent.provider)
-                }
-                HStack(spacing: 9) {
-                    Image(systemName: "checkmark.shield").foregroundStyle(.teal)
-                    Text(L("이름 · Buzz 신원 · 팀은 그대로 유지합니다.")).font(.callout).foregroundStyle(.secondary)
-                }
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(L("현재 구독 계정 잔량")).font(.headline)
-                            Text(currentAccountName)
-                                .font(.callout).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button(L("잔량 새로고침")) { Task { await app.refreshUsage(agent.account_id) } }
-                            .disabled(app.usageLoading.contains(agent.account_id))
-                    }
-                    UsageView(usage: app.usage[agent.account_id] ?? snapshot.monitor?.usages?[agent.account_id],
-                              loading: app.usageLoading.contains(agent.account_id))
-                }
-                .padding(24)
-                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
-                .task(id: agent.account_id) { if app.usage[agent.account_id] == nil { await app.refreshUsage(agent.account_id) } }
-                VStack(alignment: .leading, spacing: 22) {
-                    fieldTitle("01", L("AI 서비스"))
-                    Picker(L("AI 서비스"), selection: $provider) {
-                        ForEach(["codex", "claude", "grok", "ollama"], id: \.self) { Text(providerName($0)).tag($0) }
-                    }.pickerStyle(.segmented).labelsHidden()
-                        .onChange(of: provider) { _, _ in
-                            fallbackIDs = ["", "", ""]
-                            autoFallback = false
-                            accountID = accounts.first?.id ?? ""
-                            model = choices.first?.id ?? ""
-                            effort = choices.first?.default_effort ?? ""
-                            customModel = choices.isEmpty
-                        }
-                    Divider()
-                    fieldTitle("02", provider == "ollama" ? L("Ollama 서버") : L("구독 계정"))
-                    HStack {
-                        Picker(L("구독 계정"), selection: $accountID) {
-                            if accounts.isEmpty { Text(L("계정 등록 필요")).tag("") }
-                            if accountID == "unregistered" { Text(L("기존 경로: 계정 등록 필요")).tag("unregistered") }
-                            ForEach(accounts) { item in Text(item.builtin ? L(item.name) : item.name).tag(item.id) }
-                        }.labelsHidden().controlSize(.large)
-                            .onChange(of: accountID) { _, _ in
-                                fallbackIDs = fallbackIDs.map { $0 == accountID ? "" : $0 }
-                                if account?.isLocalCodex == true { fallbackIDs = ["", "", ""]; autoFallback = false }
-                                if account?.isServer == true || (!customModel && !choices.contains(where: { $0.id == model })) {
-                                    model = choices.first?.id ?? ""
-                                    effort = choices.first?.default_effort ?? ""
-                                    customModel = false
-                                }
+        GeometryReader { geometry in
+            let columns = geometry.size.width >= 1088
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        header
+                        if columns {
+                            HStack(alignment: .top, spacing: 24) {
+                                settingsCard.frame(maxWidth: .infinity)
+                                VStack(spacing: 24) {
+                                    usageCard
+                                    fallbackCard
+                                }.frame(width: 360)
                             }
-                        Button { app.openAddAccount(provider: provider) } label: { Label(L("계정 추가"), systemImage: "plus") }
-                    }
-                    if let account = account {
-                        Label(account.isServer ? (account.ready ? L("서버 연결됨") : L("서버 연결 필요")) : (account.ready ? L("저장된 로그인 정보가 있습니다.") : L("계정 설정에서 먼저 로그인하세요.")),
-                              systemImage: account.ready ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark")
-                            .font(.caption).foregroundStyle(account.ready ? Color.secondary : Color.orange)
-                    }
-                    if account?.isServer == true {
-                        Text(account?.endpoint ?? "http://127.0.0.1:11434").font(.caption).foregroundStyle(.secondary)
-                        Text(L("도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 도구 모음의 새로고침을 누르세요."))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Divider()
-                    if (provider == "codex" || provider == "claude") && account?.isLocalCodex != true {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text(L("예비 구독 계정 · 최대 3개")).font(.headline)
-                            ForEach(0..<3, id: \.self) { index in
-                                Picker(L("예비 {0}", String(describing: index + 1)), selection: $fallbackIDs[index]) {
-                                    Text(L("선택 안 함")).tag("")
-                                    ForEach(accounts.filter { !$0.isLocalCodex && $0.id != accountID && (!fallbackIDs.contains($0.id) || fallbackIDs[index] == $0.id) }) { item in
-                                        Text((item.builtin ? L(item.name) : item.name) + (item.ready ? "" : L(" · 로그인 필요"))).tag(item.id)
-                                    }
-                                }
-                            }
-                            Toggle(L("한도 소진 시 예비 계정으로 자동 전환"), isOn: $autoFallback)
-                            Text(L("5분마다 잔량을 조회하고 위 순서대로 전환합니다. 모델과 effort는 유지합니다. 조회 실패 시에는 전환하지 않습니다."))
-                                .font(.caption).foregroundStyle(.secondary)
-                            Text(L("앱을 닫아도 로그인한 Mac에서 동작합니다. 계정을 전환하면 실행 중인 Buzz를 종료합니다. Buzz는 직접 시작하세요."))
-                                .font(.caption).foregroundStyle(.orange)
-                            if let checked = snapshot.monitor?.checked_at, let date = usageDate(checked) {
-                                Text(L("자동 조회: {0}", String(describing: displayDate(date, timeOnly: true)))).font(.caption).foregroundStyle(.secondary)
-                            }
-                            ForEach(snapshot.monitor?.last_events ?? [], id: \.self) { Text(localizedBackend($0)).font(.caption).foregroundStyle(.secondary) }
+                        } else {
+                            settingsCard
+                            usageCard
+                            fallbackCard
                         }
-                        Divider()
-                    }
-                    fieldTitle("03", L("모델"))
-                    if provider == "ollama" && choices.isEmpty {
-                        Text(L("사용할 로컬 모델이 없습니다. Ollama 서버에 도구 호출을 지원하는 모델을 설치하고 새로고침하세요."))
-                            .font(.callout).foregroundStyle(.secondary)
-                    } else if !customModel && !choices.isEmpty {
-                        Picker(L("모델"), selection: $model) {
-                            ForEach(choices) { Text($0.name + "  ·  " + $0.id).tag($0.id) }
-                        }.labelsHidden().controlSize(.large)
-                    } else {
-                        TextField(L("모델 ID"), text: $model).textFieldStyle(.roundedBorder).controlSize(.large)
-                    }
-                    HStack {
-                        Toggle(L("모델 ID 직접 입력"), isOn: $customModel).toggleStyle(.checkbox).disabled(provider == "ollama")
-                        Spacer()
-                        Text(provider == "ollama" ? L("Ollama 설치 모델") : provider == "claude" ? L("CLI 모델 별칭") : L("로컬 모델 캐시")).font(.caption).foregroundStyle(.tertiary)
-                    }
-                    .onChange(of: customModel) { _, custom in
-                        if !custom && !choices.contains(where: { $0.id == model }) { model = choices.first?.id ?? "" }
-                    }
-                    .onChange(of: model) { _, _ in
-                        if !effort.isEmpty && !efforts.contains(effort) { effort = "" }
-                    }
-                    Divider()
-                    fieldTitle("04", L("Effort"))
-                    Picker(L("Effort"), selection: $effort) {
-                        Text(L("모델 기본값")).tag("")
-                        ForEach(efforts, id: \.self) { Text($0).tag($0) }
-                    }.pickerStyle(.segmented).labelsHidden()
-                    Text(account?.isLocalCodex == true ? L("로컬 모델에는 Codex·Claude 구독 잔량이 적용되지 않습니다.") : provider == "ollama" ? L("Ollama는 모델의 기본 추론 설정을 사용합니다. 구독 계정의 사용량은 차감하지 않습니다.") : L("높을수록 더 오래 생각하며 구독 사용량이 늘 수 있습니다. 지원 범위는 모델마다 다릅니다."))
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }.padding(32).frame(maxWidth: columns ? 1240 : .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(24)
-                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.06)))
-                HStack(alignment: .center, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(L("설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.")).font(.callout).fontWeight(.medium)
-                        Text(L("실행 중인 Buzz는 종료되며 모든 에이전트의 응답이 중단될 수 있습니다.")).font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
+                saveBar
+            }
+        }.background(Color(nsColor: .windowBackgroundColor))
+            .onChange(of: app.createdAccountSelection) { _, created in
+                guard let created, created.agentID == agent.id,
+                    let added = snapshot.accounts.first(where: { $0.id == created.accountID })
+                else { return }
+                if provider != added.provider { selectProvider(added.provider) }
+                selectAccount(added.id)
+            }
+    }
+    var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(agent.name).font(.system(size: 24, weight: .bold))
+                Text(L("구독 계정과 생각의 깊이를 선택하세요.")).font(.system(size: 13)).foregroundStyle(.secondary)
+                Label(L("이름 · Buzz 신원 · 팀은 그대로 유지합니다."), systemImage: "checkmark.shield")
+                    .font(.caption).foregroundStyle(.secondary).padding(.top, 4)
+            }
+            Spacer()
+            ProviderBadge(provider: agent.provider)
+        }
+    }
+    var settingsCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                fieldTitle("01", L("AI 서비스"))
+                Picker(L("AI 서비스"), selection: Binding(get: { provider }, set: selectProvider)) {
+                    ForEach(["codex", "claude", "grok", "ollama"], id: \.self) { Text(providerName($0)).tag($0) }
+                }.pickerStyle(.segmented).labelsHidden().controlSize(.regular)
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                fieldTitle("02", provider == "ollama" ? L("Ollama 서버") : L("구독 계정"))
+                HStack {
+                    PopupField(
+                        title: L("구독 계정"), selection: Binding(get: { accountID }, set: selectAccount),
+                        options: (accounts.isEmpty ? [PopupOption(id: "", title: L("계정 등록 필요"))] : [])
+                            + (accountID == "unregistered" ? [PopupOption(id: "unregistered", title: L("기존 경로: 계정 등록 필요"))] : [])
+                            + accounts.map { PopupOption(id: $0.id, title: $0.builtin ? L($0.name) : $0.name) }
+                    ).popupField()
                     Button {
-                        Task { await app.apply(agent: agent, account: accountID, provider: provider, model: model, effort: effort, revision: snapshot.revision, fallbackIDs: fallbackIDs.filter { !$0.isEmpty }, autoFallback: autoFallback) }
+                        app.openAddAccount(provider: provider)
                     } label: {
-                        HStack(spacing: 8) {
-                            if app.busy { ProgressView().controlSize(.small) }
-                            Text(L("설정 저장"))
-                        }
-                    }.buttonStyle(.borderedProminent).tint(.teal).controlSize(.large)
-                        .disabled(app.busy || account?.ready != true || model.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Label(L("계정 추가"), systemImage: "plus")
+                    }.secondaryAction(.inline).accessibilityIdentifier("editor-add-account")
                 }
-                if !app.message.isEmpty { Text(app.message).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
-            }.padding(32).frame(maxWidth: 890)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(nsColor: .windowBackgroundColor))
+                if let account = account {
+                    Label(
+                        account.isServer ? (account.ready ? L("서버 연결됨") : L("서버 연결 필요")) : (account.ready ? L("저장된 로그인 정보가 있습니다.") : L("계정 설정에서 먼저 로그인하세요.")),
+                        systemImage: account.ready ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark"
+                    )
+                    .font(.caption).foregroundStyle(account.ready ? Color.secondary : Color.orange)
+                }
+                if account?.isServer == true {
+                    Text(account?.endpoint ?? "http://127.0.0.1:11434").font(.caption).foregroundStyle(.secondary)
+                    Text(L("도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 도구 모음의 새로고침을 누르세요."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                fieldTitle("03", L("모델"))
+                if provider == "ollama" && choices.isEmpty {
+                    Text(L("사용할 로컬 모델이 없습니다. Ollama 서버에 도구 호출을 지원하는 모델을 설치하고 새로고침하세요."))
+                        .font(.callout).foregroundStyle(.secondary)
+                } else if !customModel && !choices.isEmpty {
+                    PopupField(
+                        title: L("모델"), selection: $model,
+                        options: choices.map { PopupOption(id: $0.id, title: $0.name + "  ·  " + $0.id) }
+                    ).popupField()
+                } else {
+                    TextField(L("모델 ID"), text: $model).accessibilityIdentifier("editor-model").textFieldStyle(.roundedBorder).controlSize(.regular)
+                }
+                HStack {
+                    Toggle(L("모델 ID 직접 입력"), isOn: $customModel).toggleStyle(.checkbox).disabled(provider == "ollama")
+                    Spacer()
+                    Text(provider == "ollama" ? L("Ollama 설치 모델") : provider == "claude" ? L("CLI 모델 별칭") : L("로컬 모델 캐시")).font(.caption).foregroundStyle(
+                        .tertiary)
+                }
+                .onChange(of: customModel) { _, custom in
+                    if !custom && !choices.contains(where: { $0.id == model }) { model = choices.first?.id ?? "" }
+                }
+                .onChange(of: model) { _, _ in
+                    if !effort.isEmpty && !efforts.contains(effort) { effort = "" }
+                }
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                fieldTitle("04", L("Effort"))
+                Picker(L("Effort"), selection: $effort) {
+                    Text(L("모델 기본값")).tag("")
+                    ForEach(efforts, id: \.self) { Text($0).tag($0) }
+                }.pickerStyle(.segmented).labelsHidden().controlSize(.regular)
+                Text(
+                    account?.isLocalCodex == true
+                        ? L("로컬 모델에는 Codex·Claude 구독 잔량이 적용되지 않습니다.")
+                        : provider == "ollama"
+                            ? L("Ollama는 모델의 기본 추론 설정을 사용합니다. 구독 계정의 사용량은 차감하지 않습니다.") : L("높을수록 더 오래 생각하며 구독 사용량이 늘 수 있습니다. 지원 범위는 모델마다 다릅니다.")
+                )
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+
+            }
+        }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.primary.opacity(0.06)))
+    }
+    var usageCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("현재 구독 계정 잔량")).font(.headline)
+                    Text(currentAccountName)
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(L("잔량 새로고침")) { Task { await app.refreshUsage(agent.account_id) } }
+                    .secondaryAction(.inline).disabled(app.usageLoading.contains(agent.account_id))
+            }
+            UsageView(
+                usage: app.usage[agent.account_id] ?? snapshot.monitor?.usages?[agent.account_id],
+                loading: app.usageLoading.contains(agent.account_id))
+        }
+        .padding(20)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
+        .task(id: agent.account_id) { if app.usage[agent.account_id] == nil { await app.refreshUsage(agent.account_id) } }
+    }
+    @ViewBuilder var fallbackCard: some View {
+        if (provider == "codex" || provider == "claude") && account?.isLocalCodex != true {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(L("예비 구독 계정 · 최대 3개")).font(.headline)
+                ForEach(0..<3, id: \.self) { index in
+                    HStack {
+                        Text(L("예비 {0}", String(describing: index + 1))).frame(width: 60, alignment: .leading)
+                        PopupField(
+                            title: L("예비 {0}", String(index + 1)), selection: $fallbackIDs[index],
+                            options: [PopupOption(id: "", title: L("선택 안 함"))]
+                                + accounts.filter { !$0.isLocalCodex && $0.id != accountID && (!fallbackIDs.contains($0.id) || fallbackIDs[index] == $0.id) }
+                                .map { PopupOption(id: $0.id, title: ($0.builtin ? L($0.name) : $0.name) + ($0.ready ? "" : L(" · 로그인 필요"))) }
+                        ).popupField()
+                    }
+                }
+                Toggle(L("한도 소진 시 예비 계정으로 자동 전환"), isOn: $autoFallback)
+                Text(L("5분마다 잔량을 조회하고 위 순서대로 전환합니다. 모델과 effort는 유지합니다. 조회 실패 시에는 전환하지 않습니다."))
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(L("앱을 닫아도 로그인한 Mac에서 동작합니다. 계정을 전환하면 실행 중인 Buzz를 종료합니다. Buzz는 직접 시작하세요."))
+                    .font(.caption).foregroundStyle(.orange)
+                if let checked = snapshot.monitor?.checked_at, let date = usageDate(checked) {
+                    Text(L("자동 조회: {0}", String(describing: displayDate(date, timeOnly: true)))).font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(snapshot.monitor?.last_events ?? [], id: \.self) { Text(localizedBackend($0)).font(.caption).foregroundStyle(.secondary) }
+            }.padding(20).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
+        }
+    }
+    var saveBar: some View {
+        HStack(spacing: 12) {
+            if app.busy { ProgressView().controlSize(.small) }
+            Text(statusMessage).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                .textSelection(.enabled).help(statusMessage).frame(maxWidth: .infinity, alignment: .leading)
+            if hasChanges {
+                Button(L("변경 취소"), action: resetChanges).secondaryAction(.bar).disabled(app.busy)
+                    .accessibilityIdentifier("editor-discard")
+            }
+            Button(L("설정 저장")) {
+                Task {
+                    await app.apply(
+                        agent: agent, account: accountID, provider: provider, model: model, effort: effort, revision: snapshot.revision,
+                        fallbackIDs: fallbackIDs.filter { !$0.isEmpty }, autoFallback: autoFallback)
+                }
+            }.primaryAction(.bar).keyboardShortcut("s", modifiers: .command)
+                .disabled(!hasChanges || app.busy || account?.ready != true || model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("editor-save")
+        }.padding(.horizontal, 24).frame(height: 56).background(.bar)
+            .overlay(alignment: .top) { Color.primary.opacity(0.06).frame(height: 1) }
+    }
+    func selectProvider(_ value: String) {
+        provider = value
+        fallbackIDs = ["", "", ""]
+        autoFallback = false
+        selectAccount(accounts.first?.id ?? "")
+        model = choices.first?.id ?? ""
+        effort = choices.first?.default_effort ?? ""
+        customModel = choices.isEmpty
+    }
+    func selectAccount(_ value: String) {
+        accountID = value
+        fallbackIDs = fallbackIDs.map { $0 == value ? "" : $0 }
+        if account?.isLocalCodex == true {
+            fallbackIDs = ["", "", ""]
+            autoFallback = false
+        }
+        if account?.isServer == true || (!customModel && !choices.contains(where: { $0.id == model })) {
+            model = choices.first?.id ?? ""
+            effort = choices.first?.default_effort ?? ""
+            customModel = false
+        }
+    }
+    func resetChanges() {
+        provider = agent.provider
+        accountID = agent.account_id
+        model = agent.model
+        effort = agent.effort
+        fallbackIDs = Array(((agent.fallback_ids ?? []) + ["", "", ""]).prefix(3))
+        autoFallback = agent.auto_fallback ?? false
+        customModel = !choices.contains(where: { $0.id == model })
     }
     func fieldTitle(_ number: String, _ title: String) -> some View {
         HStack(spacing: 10) {
@@ -802,6 +916,7 @@ struct AgentEditor: View {
         }
     }
 }
+
 struct AccountsView: View {
     @Environment(\.locale) private var displayLocale
     @ObservedObject var app: AppModel
@@ -819,9 +934,9 @@ struct AccountsView: View {
                         Text(L("서비스마다 여러 계정을 등록하고 에이전트에 연결하세요.")).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button(L("잔량 새로고침")) { app.refreshAllUsage() }.disabled(!app.usageLoading.isEmpty)
+                    Button(L("잔량 새로고침")) { app.refreshAllUsage() }.secondaryAction(.bar).disabled(!app.usageLoading.isEmpty)
                     Button { app.openAddAccount() } label: { Label(L("계정 추가"), systemImage: "plus") }
-                        .buttonStyle(.borderedProminent).tint(.teal).controlSize(.large)
+                        .primaryAction(.bar)
                 }
                 if !app.message.isEmpty { Text(app.message).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
                 Picker(L("프로바이더 필터"), selection: $app.accountFilter) {
@@ -833,7 +948,7 @@ struct AccountsView: View {
                 if visibleAccounts.isEmpty {
                     VStack(spacing: 12) {
                         Text(L("표시할 계정이 없습니다.")).foregroundStyle(.secondary)
-                        Button(L("계정 추가")) { app.openAddAccount() }
+                        Button(L("계정 추가")) { app.openAddAccount() }.secondaryAction(.inline)
                     }.frame(maxWidth: .infinity).padding(24)
                 }
                 ForEach(providers.filter { provider in visibleAccounts.contains { $0.provider == provider } }, id: \.self) { provider in
@@ -862,21 +977,21 @@ struct AccountsView: View {
                                 }
                                 Spacer()
                                 if account.isServer {
-                                    Button(L("연결 확인")) { Task { await app.refresh(); await app.refreshUsage(account.id) } }.disabled(app.busy)
+                                    Button(L("연결 확인")) { Task { await app.refresh(); await app.refreshUsage(account.id) } }.secondaryAction(.inline).disabled(app.busy)
                                 } else if !account.builtin {
-                                    Button(account.ready ? L("다시 로그인") : L("로그인")) { app.startLogin(account) }.disabled(app.loginRunning)
+                                    Button(account.ready ? L("다시 로그인") : L("로그인")) { app.startLogin(account) }.secondaryAction(.inline).disabled(app.loginRunning)
                                 } else {
                                     Text(L("기본 계정")).font(.caption).foregroundStyle(.secondary)
                                 }
                             }
                             UsageView(usage: app.usage[account.id], loading: app.usageLoading.contains(account.id))
                             HStack {
-                                Button(L("이 계정 잔량 새로고침")) { Task { await app.refreshUsage(account.id) } }
+                                Button(L("이 계정 잔량 새로고침")) { Task { await app.refreshUsage(account.id) } }.secondaryAction(.compact)
                                     .disabled(app.usageLoading.contains(account.id) || (app.loginRunning && app.loginAccount?.id == account.id))
                                 Spacer()
                                 Button(role: .destructive) { pendingDelete = account } label: {
                                     Label(L("계정 삭제"), systemImage: "trash")
-                                }.disabled(app.busy || app.loginRunning)
+                                }.secondaryAction(.compact).disabled(app.busy || app.loginRunning)
                             }.font(.caption)
                             }.padding(.vertical, 9)
                             .task { if app.usage[account.id] == nil { await app.refreshUsage(account.id) } }
@@ -889,7 +1004,7 @@ struct AccountsView: View {
                             HStack {
                                 Text(providerName(account.provider) + " · " + (account.id.hasPrefix("default-") ? L(account.name) : account.name))
                                 Spacer()
-                                Button(L("복원")) { Task { await app.changeAccount(account.id, restore: true) } }
+                                Button(L("복원")) { Task { await app.changeAccount(account.id, restore: true) } }.secondaryAction(.inline)
                                     .disabled(app.busy || app.loginRunning)
                             }.padding(.vertical, 6)
                         }
@@ -1000,7 +1115,7 @@ struct AddAccountView: View {
             Picker(L("서비스"), selection: $provider) {
                 ForEach(["codex", "claude", "grok", "ollama"], id: \.self) { Text(providerName($0)).tag($0) }
             }.pickerStyle(.segmented)
-            TextField(L("예: 개인 Pro, 업무 계정"), text: $name).textFieldStyle(.roundedBorder).controlSize(.large)
+            TextField(L("예: 개인 Pro, 업무 계정"), text: $name).textFieldStyle(.roundedBorder).controlSize(.regular).accessibilityIdentifier("add-account-name")
             if provider == "codex" {
                 Toggle(L("로컬 OpenAI 호환 서버"), isOn: $localCodex)
                 if localCodex {
@@ -1014,10 +1129,11 @@ struct AddAccountView: View {
             }
             Text(L("비밀번호와 토큰은 해당 CLI가 보관합니다. 이 앱에는 직접 입력하지 않습니다.")).font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button(L("취소")) { app.accountSheet = false }.keyboardShortcut(.cancelAction)
+                Button(L("취소")) { app.accountSheet = false }.secondaryAction(.inline).keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(serverAccount ? L("서버 추가") : L("추가하고 로그인")) { Task { await app.create(name: name, provider: provider, endpoint: provider == "ollama" ? endpoint : (localCodex && provider == "codex" ? codexEndpoint : "")) } }
-                    .buttonStyle(.borderedProminent).tint(.teal)
+                    .primaryAction(.inline)
+                    .accessibilityIdentifier("add-account-submit")
                     .disabled(app.busy || name.trimmingCharacters(in: .whitespaces).isEmpty || (provider == "codex" && localCodex && codexEndpoint.trimmingCharacters(in: .whitespaces).isEmpty))
                     .keyboardShortcut(.defaultAction)
             }

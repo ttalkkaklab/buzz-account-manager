@@ -15,9 +15,12 @@ import Foundation
                 assert(app.snapshot?.accounts.first?.provider == provider)
                 assert(app.snapshot?.accounts.first?.isServer == true)
                 assert(app.selection == "selected-agent", "Server creation must preserve the selected agent")
-                assert(app.section == .accounts, "Server creation must open account settings")
+                assert(app.section == entry, "Server creation must stay in its entry screen")
                 assert(!app.accountSheet && !app.busy && app.loginAccount == nil)
                 assert(app.usage["created-server"]?.status == "ok", "Await the complete server creation path")
+                if entry == .agents {
+                    assert(app.createdAccountSelection == CreatedAccountSelection(agentID: "selected-agent", accountID: "created-server"))
+                } else { assert(app.createdAccountSelection == nil) }
                 app.section = .agents
                 assert(app.snapshot?.agents.contains(where: { $0.id == app.selection }) == true)
                 print("Server creation passed: \(provider), entry=\(entry.rawValue)")
