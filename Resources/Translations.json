@@ -696,7 +696,7 @@
     "vi": "Đã lưu cài đặt cho {0}. Hãy tự mở Buzz."
   },
   "앱을 닫아도 로그인한 Mac에서 동작합니다. 계정을 전환하면 실행 중인 Buzz를 종료합니다. Buzz는 직접 시작하세요.": {
-    "en": "Runs while you are logged into this Mac, even when this app is closed. Switching accounts quits Buzz if it is running. Start Buzz manually.",
+    "en": "Runs while you are signed in to this Mac, even when this app is closed. Switching accounts quits Buzz if it is running. Start Buzz manually.",
     "vi": "Hoạt động khi bạn đăng nhập vào máy Mac này, kể cả khi đóng ứng dụng. Chuyển tài khoản sẽ đóng Buzz nếu đang chạy. Hãy tự mở Buzz."
   },
   "설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.": {
@@ -848,8 +848,8 @@
     "vi": "Lưu"
   },
   "계정 정보를 저장했습니다.": {
-    "en": "Account details saved.",
-    "vi": "Đã lưu thông tin tài khoản."
+    "en": "Account saved.",
+    "vi": "Đã lưu tài khoản."
   },
   "{0} 계정을 목록에서 제거합니다. 로그인 파일과 저장된 인증정보는 보관합니다.": {
     "en": "Remove {0} from the list. Sign-in files and saved credentials will be kept.",
@@ -888,16 +888,16 @@
     "vi": "Không thể bắt đầu đăng nhập. Kiểm tra tài khoản và cài đặt CLI."
   },
   "Buzz 실행 파일을 찾지 못했습니다. Windows용 Buzz를 설치하세요: ": {
-    "en": "Buzz executable not found. Install Buzz for Windows:",
-    "vi": "Không tìm thấy tệp thực thi Buzz. Hãy cài Buzz cho Windows:"
+    "en": "Buzz executable not found. Install Buzz for Windows: ",
+    "vi": "Không tìm thấy tệp thực thi Buzz. Hãy cài Buzz cho Windows: "
   },
   "Node.js를 찾지 못했습니다. Buzz에서 실행 도구를 설치하세요.": {
-    "en": "Node.js was not found. Install the runtime tools in Buzz.",
+    "en": "Node.js not found. Install the runtime tools in Buzz.",
     "vi": "Không tìm thấy Node.js. Hãy cài công cụ chạy trong Buzz."
   },
   "CLI 실행 파일을 확인할 수 없습니다. Buzz에서 실행 도구를 다시 설치하세요: ": {
-    "en": "Could not verify the CLI executable. Reinstall the runtime tools in Buzz:",
-    "vi": "Không thể xác minh tệp thực thi CLI. Hãy cài lại công cụ chạy trong Buzz:"
+    "en": "Could not verify the CLI executable. Reinstall the runtime tools in Buzz: ",
+    "vi": "Không thể xác minh tệp thực thi CLI. Hãy cài lại công cụ chạy trong Buzz: "
   },
   "CLI 연결이 종료됐습니다.": {
     "en": "The CLI connection closed.",
