@@ -112,6 +112,8 @@ xcrun swiftc -D TESTING -swift-version 5 -parse-as-library -framework SwiftUI -f
 ```
 
 빌드 결과는 `build/Buzz Account Manager.app`과 `~/Applications/Buzz Account Manager.app`입니다.
+빌드한 것이 설치본보다 낮은 버전이면 설치를 멈춥니다. 오래된 체크아웃이 최신 앱을 덮어쓰지 못하게 막는 것이고,
+일부러 내려야 할 때는 `BUZZ_INSTALL_FORCE=1 ./build.sh`를 씁니다.
 다른 Mac에는 ZIP과 `scripts/install_app.py`로 설치합니다. 공증은 포함하지 않습니다.
 
 검증 범위: 격리된 임시 디렉토리에서 계정 생성·설정 반영·다른 에이전트 보존·충돌 차단·실패 복구·

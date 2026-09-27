@@ -45,6 +45,8 @@ cd buzz-account-manager
 `build.sh`가 `~/Applications/Buzz Account Manager.app`에 설치하고 서명까지 검사한 뒤 설치 경로를 출력합니다.
 같은 Mac에서 만든 앱에는 격리 속성이 붙지 않아 Finder에서 바로 열립니다. 설치 없이 빌드만 하려면
 `BUZZ_INSTALL=0 ./build.sh`를 쓰세요.
+빌드한 것이 설치본보다 낮은 버전이면 설치를 멈추고 오류를 냅니다. 일부러 예전 빌드를 되돌려 깔 때는
+`BUZZ_INSTALL_FORCE=1 ./build.sh`를 씁니다.
 
 ## 방법 2 — ZIP으로 옮기기
 
