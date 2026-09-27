@@ -115,6 +115,7 @@ xcrun swiftc -D TESTING -swift-version 5 -parse-as-library -framework SwiftUI -f
 빌드한 것이 설치본보다 낮은 버전이면 설치를 멈춥니다. 오래된 체크아웃이 최신 앱을 덮어쓰지 못하게 막는 것이고,
 일부러 내려야 할 때는 `BUZZ_INSTALL_FORCE=1 ./build.sh`를 씁니다.
 다른 Mac에는 ZIP과 `scripts/install_app.py`로 설치합니다. 공증은 포함하지 않습니다.
+ZIP 설치도 같은 다운그레이드 검사를 거치며, 일부러 내릴 때는 `BUZZ_INSTALL_FORCE=1 python3 scripts/install_app.py <ZIP>`을 씁니다.
 
 검증 범위: 격리된 임시 디렉토리에서 계정 생성·설정 반영·다른 에이전트 보존·충돌 차단·실패 복구·
 서비스별 환경변수와 effort 전달을 검사했습니다. 설치한 앱에서 서비스 전환·모델·effort 목록과

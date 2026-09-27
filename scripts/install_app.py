@@ -15,6 +15,8 @@ with tempfile.TemporaryDirectory(prefix='buzz-app-', dir=applications) as folder
     candidate = Path(folder) / 'Buzz Account Manager.app'
     subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(candidate)], check=True)
     target = applications / candidate.name
+    subprocess.run(['/usr/bin/python3', str(Path(__file__).with_name('version_guard.py')),
+                    str(candidate), str(target)], check=True)
     backup = None
     if target.exists():
         backup = Path.home() / '.config/buzz-agents/app-backups' / datetime.datetime.now().strftime('%Y%m%d-%H%M%S') / target.name
