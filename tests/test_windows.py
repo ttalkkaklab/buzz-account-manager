@@ -11,6 +11,8 @@ import tempfile
 import time
 from types import SimpleNamespace
 import unittest
+import re
+import shutil
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'Resources'))
@@ -19,6 +21,97 @@ from test_backend import b
 
 
 class WindowsSupportTests(unittest.TestCase):
+    def test_windows_translation_keys_have_both_languages(self):
+        root = Path(__file__).resolve().parents[1]
+        catalog = json.loads((root / 'Resources/Translations.json').read_text(encoding='utf-8'))
+        keys = set()
+        for name in ('App.ps1', 'Login.ps1', 'Localization.ps1'):
+            source = (root / 'windows' / name).read_text(encoding='utf-8-sig')
+            keys.update(re.findall(r"(?:\bL|\bSet-Message)\s+(?:\(\s*)?'([^']+)'", source))
+        self.assertGreater(len(keys), 70)
+        for key in keys:
+            for language in ('en', 'vi'):
+                with self.subTest(key=key, language=language):
+                    self.assertTrue(catalog.get(key, {}).get(language, '').strip())
+
+    def test_stop_buzz_dispatch_is_windows_only_and_mocked(self):
+        for platform in ('nt', 'posix'):
+            facade = SimpleNamespace(name=platform)
+            with patch.object(b, 'os', facade), patch.object(b, 'win', win, create=True), \
+                 patch.object(win, 'stop_buzz') as stop:
+                if platform == 'nt':
+                    self.assertEqual(b.Manager.stop_buzz(), {'ok': True})
+                    stop.assert_called_once_with()
+                else:
+                    with self.assertRaises(ValueError):
+                        b.Manager.stop_buzz()
+                    stop.assert_not_called()
+        # Exercise CLI routing too, without constructing a Manager or touching a process.
+        with patch.object(b, 'Manager') as manager, patch.object(sys, 'argv', ['backend.py', 'stop-buzz']), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            manager.return_value.stop_buzz.return_value = {'ok': True}
+            b.main()
+            manager.return_value.stop_buzz.assert_called_once_with()
+            self.assertEqual(json.loads(output.getvalue()), {'ok': True})
+
+    def test_windows_payload_includes_shared_catalog(self):
+        root = Path(__file__).resolve().parents[1]
+        spec = importlib.util.spec_from_file_location('windows_build', root / 'windows/build.py')
+        build = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(build)
+        self.assertIn('Translations.json', build.RESOURCE_FILES)
+        self.assertIn('Localization.ps1', build.POWERSHELL_FILES)
+        uninstall = (root / 'windows/installer.nsi').read_text(encoding='utf-8')
+        for name in ('Translations.json', 'Localization.ps1'):
+            self.assertIn('Delete "$INSTDIR\\' + name + '"', uninstall)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows PowerShell localization runtime')
+    def test_windows_localization_preserves_dynamic_values(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            shutil.copy2(root / 'Resources/Translations.json', folder / 'Translations.json')
+            (folder / 'Localization.ps1').write_text(
+                (root / 'windows/Localization.ps1').read_text(encoding='utf-8'), encoding='utf-8-sig')
+            script = """$ErrorActionPreference='Stop'
+. "$PSScriptRoot/Localization.ps1"
+$script:language='en'
+$result=@(
+ (L '{0} 설정을 저장했습니다. Buzz는 직접 시작하세요.' @('Name {1}', 'INJECTED')),
+ (Localize-Backend 'My {0} CLI를 찾지 못했습니다.'),
+ (Localize-Backend 'Client: 사용 가능한 예비 계정이 없습니다.'),
+ (Localize-Backend 'Client: 예비 계정으로 전환했습니다.'),
+ (Localize-Backend 'Client: 지출 한도 도달'),
+ (Localize-Backend 'Client 크레딧: 무제한'),
+ (Localize-Backend 'Client 크레딧: 42'),
+ (Localize-Backend 'Buzz 실행 파일을 찾지 못했습니다. Windows용 Buzz를 설치하세요: C:\\test: keep'),
+ (Localize-Backend 'CLI 실행 파일을 확인할 수 없습니다. Buzz에서 실행 도구를 다시 설치하세요: untouched {0}'),
+ (Localize-QuotaLabel '5시간 · 7일 · OAuth 앱'),
+ (Localize-Backend 'unknown untouched')
+)
+$script:language='vi'
+$result+=Localize-QuotaLabel '5시간 · 7일'
+$result+=Display-Date '2026-09-27T12:00:00.123456+00:00'
+[Console]::OutputEncoding=[Text.Encoding]::UTF8
+ConvertTo-Json -InputObject $result -Compress
+"""
+            runner = folder / 'check.ps1'
+            runner.write_text(script, encoding='utf-8-sig')
+            result = subprocess.run(['powershell.exe', '-NoProfile', '-File', str(runner)],
+                                    capture_output=True, text=True, encoding='utf-8', check=True)
+            rows = json.loads(result.stdout.lstrip('\ufeff'))
+            self.assertIn('Name {1}', rows[0])
+            self.assertNotIn('INJECTED', rows[0])
+            self.assertEqual(rows[1], 'My {0} CLI was not found.')
+            for row in rows[2:9]:
+                self.assertNotRegex(row, '[가-힣]')
+            self.assertTrue(rows[7].endswith('C:\\test: keep'))
+            self.assertTrue(rows[8].endswith('untouched {0}'))
+            self.assertEqual(rows[9], '5 hours · 7 days · OAuth apps')
+            self.assertEqual(rows[10], 'unknown untouched')
+            self.assertEqual(rows[11], '5 giờ · 7 ngày')
+            self.assertNotIn('T12:', rows[12])
+
     def test_store_uses_roaming_appdata(self):
         with patch.dict(os.environ, {'APPDATA': '/test/한글 user/roaming'}):
             self.assertEqual(win.store_path(Path('/other')), Path('/test/한글 user/roaming/xyz.block.buzz.app/agents/managed-agents.json'))

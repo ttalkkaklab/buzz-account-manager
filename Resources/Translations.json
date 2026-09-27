@@ -903,9 +903,21 @@
     "en": "The CLI connection closed.",
     "vi": "Kết nối CLI đã đóng."
   },
+  "정보": {
+    "en": "About",
+    "vi": "Thông tin"
+  },
   "계정 설정에서 먼저 로그인하세요.": {
     "en": "Sign in under Account settings first.",
     "vi": "Đăng nhập trong Cài đặt tài khoản trước."
+  },
+  "숨긴 기본 계정": {
+    "en": "Hidden default accounts",
+    "vi": "Tài khoản mặc định đã ẩn"
+  },
+  "숨긴 기본 계정에서 언제든 복원할 수 있습니다.": {
+    "en": "You can restore it anytime under Hidden default accounts.",
+    "vi": "Bạn có thể khôi phục bất kỳ lúc nào trong mục Tài khoản mặc định đã ẩn."
   },
   "로그인 정보를 찾지 못했습니다. 계정 설정에서 먼저 로그인하세요.": {
     "en": "No sign-in credentials found. Sign in under Account settings first.",

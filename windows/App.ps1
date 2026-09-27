@@ -1,300 +1,537 @@
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class BuzzShell {
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-    public static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
-    [DllImport("user32.dll")]
-    public static extern bool DestroyIcon(IntPtr icon);
+ [DllImport("shell32.dll",CharSet=CharSet.Unicode)] public static extern int SetCurrentProcessExplicitAppUserModelID(string id);
+ [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr icon);
+ [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+ [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hwnd,int msg,IntPtr w,IntPtr l);
 }
 '@
+[void][BuzzShell]::SetProcessDPIAware()
 [void][BuzzShell]::SetCurrentProcessExplicitAppUserModelID('AstraVision.BuzzAccountManager')
-[System.Windows.Forms.Application]::EnableVisualStyles()
-$env:PYTHONUTF8 = '1'
-$env:PYTHONIOENCODING = 'utf-8'
-$script:state = $null
-$script:loading = $false
-$script:busy = $false
-
-function Show-Error($message) {
-    [void][System.Windows.Forms.MessageBox]::Show([string]$message, 'Buzz Account Manager', 'OK', 'Error')
+[Windows.Forms.Application]::EnableVisualStyles()
+. "$PSScriptRoot\Localization.ps1"
+$env:PYTHONUTF8='1'; $env:PYTHONIOENCODING='utf-8'
+$script:state=$null; $script:busy=$false; $script:loading=$false; $script:saving=$false
+$script:section='accounts'; $script:filter='all'; $script:agentId=''; $script:message=''; $script:messageValues=@()
+$script:usageCache=@{}; $script:expanded=@{}; $script:logins=@{}; $script:hiddenOpen=$false
+$script:bindings=New-Object System.Collections.Generic.List[object]
+$script:selection='system'; $settingsKey='HKCU:\Software\Buzz Account Manager'
+if (Test-Path $settingsKey) {
+ $saved=(Get-ItemProperty $settingsKey -Name DisplayLanguage -ErrorAction SilentlyContinue).DisplayLanguage
+ if ($saved -in @('system','ko','en','vi')) { $script:selection=$saved }
 }
-function Invoke-Backend([string]$action, $body = $null) {
-    if ($script:busy) { throw '다른 요청을 처리하고 있습니다.' }
-    $script:busy = $true
-    $form.UseWaitCursor = $true
-    $form.Enabled = $false
-    try {
-        $info = New-Object System.Diagnostics.ProcessStartInfo
-        $info.FileName = "$PSScriptRoot\runtime\python.exe"
-        $info.Arguments = '-X utf8 "' + "$PSScriptRoot\backend.py" + '" ' + $action
-        $info.UseShellExecute = $false
-        $info.CreateNoWindow = $true
-        $info.RedirectStandardInput = $true
-        $info.RedirectStandardOutput = $true
-        $info.RedirectStandardError = $true
-        $info.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-        $info.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-        $process = New-Object System.Diagnostics.Process
-        $process.StartInfo = $info
-        [void]$process.Start()
-        $output = $process.StandardOutput.ReadToEndAsync()
-        $errors = $process.StandardError.ReadToEndAsync()
-        if ($null -ne $body) {
-            $bytes = [System.Text.Encoding]::UTF8.GetBytes(($body | ConvertTo-Json -Depth 20 -Compress))
-            $process.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
-        }
-        $process.StandardInput.Close()
-        while (-not $process.WaitForExit(50)) { [System.Windows.Forms.Application]::DoEvents() }
-        $text = $output.GetAwaiter().GetResult()
-        $result = $text | ConvertFrom-Json
-        if ($process.ExitCode -ne 0 -or $result.error) {
-            if ($result.error) { throw [string]$result.error }
-            throw '요청을 처리하지 못했습니다. Buzz와 CLI 설치 상태를 확인하세요.'
-        }
-        return $result
-    } finally {
-        if ($process) { $process.Dispose() }
-        $script:busy = $false
-        $form.UseWaitCursor = $false
-        $form.Enabled = $true
-    }
+function Resolve-Language {
+ $script:language=$script:selection
+ if ($script:language -eq 'system') { $script:language=[Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName }
+ if ($script:language -notin @('ko','en','vi')) { $script:language='en' }
 }
-function Label-At($parent, $text, $x, $y, $width = 130) {
-    $label = New-Object System.Windows.Forms.Label
-    $label.Text = $text; $label.Location = New-Object System.Drawing.Point($x,$y)
-    $label.Size = New-Object System.Drawing.Size($width,25)
-    $parent.Controls.Add($label)
+Resolve-Language
+function Bind-Text($control,[string]$key) { $control.Text=L $key; $script:bindings.Add(@{Control=$control;Key=$key}) }
+function Set-Message([string]$key,[object[]]$values=@()) { $script:message=$key; $script:messageValues=$values }
+function Message-Text { if ($script:messageValues.Count) { return L $script:message $script:messageValues }; return Localize-Backend $script:message }
+function Show-Error($message) { [void][Windows.Forms.MessageBox]::Show($form,(Localize-Backend ([string]$message)),(L '설정을 확인해 주세요'),'OK','Error') }
+function Invoke-Backend([string]$action,$body=$null) {
+ if ($script:busy) { throw (L '다른 요청을 처리하고 있습니다.') }
+ $requestForm=[Windows.Forms.Form]::ActiveForm
+ if ($null -eq $requestForm) { $requestForm=$form }
+ $wasEnabled=$requestForm.Enabled; $wasWaitCursor=$requestForm.UseWaitCursor
+ $script:busy=$true; $requestForm.UseWaitCursor=$true; $requestForm.Enabled=$false; $process=$null
+ try {
+  $info=New-Object Diagnostics.ProcessStartInfo
+  $info.FileName="$PSScriptRoot\runtime\python.exe"; $info.Arguments='-X utf8 "'+"$PSScriptRoot\backend.py"+'" '+$action
+  $info.UseShellExecute=$false; $info.CreateNoWindow=$true
+  $info.RedirectStandardInput=$true; $info.RedirectStandardOutput=$true; $info.RedirectStandardError=$true
+  $info.StandardOutputEncoding=[Text.Encoding]::UTF8; $info.StandardErrorEncoding=[Text.Encoding]::UTF8
+  $process=New-Object Diagnostics.Process; $process.StartInfo=$info; [void]$process.Start()
+  $output=$process.StandardOutput.ReadToEndAsync(); $errors=$process.StandardError.ReadToEndAsync()
+  if ($null -ne $body) {
+   $bytes=[Text.Encoding]::UTF8.GetBytes(($body | ConvertTo-Json -Depth 20 -Compress))
+   $process.StandardInput.BaseStream.Write($bytes,0,$bytes.Length)
+  }
+  $process.StandardInput.Close()
+  while (-not $process.WaitForExit(50)) { [Windows.Forms.Application]::DoEvents() }
+  $result=$output.GetAwaiter().GetResult() | ConvertFrom-Json
+  if ($process.ExitCode -ne 0 -or $result.error) {
+   if ($result.error) { throw [string]$result.error }; throw (L '설정을 읽지 못했습니다. 다시 시도해 주세요.')
+  }
+  return $result
+ } finally {
+  if ($process) { $process.Dispose() }; $script:busy=$false
+  if (-not $requestForm.IsDisposed) { $requestForm.UseWaitCursor=$wasWaitCursor; $requestForm.Enabled=$wasEnabled }
+ }
 }
-function Button-At($parent, $text, $x, $y, $width, $callback) {
-    $button = New-Object System.Windows.Forms.Button
-    $button.Text = $text; $button.Location = New-Object System.Drawing.Point($x,$y)
-    $button.Size = New-Object System.Drawing.Size($width,34)
-    $button.Add_Click($callback); $parent.Controls.Add($button)
-    return $button
+function Label-At($parent,$text,$x,$y,$width=700,$height=26,$size=10) {
+ $c=New-Object Windows.Forms.Label; $c.Text=$text; $c.SetBounds($x,$y,$width,$height)
+ $style=if ($size -ge 12) { [Drawing.FontStyle]::Bold } else { [Drawing.FontStyle]::Regular }
+ $c.Font=New-Object Drawing.Font('Segoe UI',$size,$style); $parent.Controls.Add($c); return $c
 }
-function Combo-At($parent, $x, $y, $width, $editable = $false) {
-    $combo = New-Object System.Windows.Forms.ComboBox
-    $combo.Location = New-Object System.Drawing.Point($x,$y)
-    $combo.Size = New-Object System.Drawing.Size($width,28)
-    if (-not $editable) { $combo.DropDownStyle = 'DropDownList' }
-    $parent.Controls.Add($combo)
-    return $combo
+function Button-At($parent,$text,$x,$y,$width,$callback) {
+ $c=New-Object Windows.Forms.Button; $c.Text=$text; $c.SetBounds($x,$y,$width,34)
+ $c.Add_Click($callback); $parent.Controls.Add($c); return $c
 }
-function Fill-Accounts {
-    $script:loading = $true
-    try {
-        $assigned.Items.Clear(); $fallback.Items.Clear()
-        foreach ($a in @($script:state.accounts | Where-Object provider -eq $provider.Text)) {
-            [void]$assigned.Items.Add($a); [void]$fallback.Items.Add($a)
-        }
-        if ($assigned.Items.Count) { $assigned.SelectedIndex = 0 }
-    } finally { $script:loading = $false }
-    Fill-Models
+function Combo-At($parent,$x,$y,$width) {
+ $c=New-Object Windows.Forms.ComboBox; $c.DropDownStyle='DropDownList'; $c.SetBounds($x,$y,$width,30)
+ $parent.Controls.Add($c); return $c
 }
-function Fill-Models {
-    $model.Items.Clear()
-    if ($assigned.SelectedItem) {
-        foreach ($m in $assigned.SelectedItem.models) { [void]$model.Items.Add($m.id) }
-    }
-    Fill-Efforts
+function Stack($parent,$width=890) {
+ $c=New-Object Windows.Forms.FlowLayoutPanel; $c.FlowDirection='TopDown'; $c.WrapContents=$false
+ $c.AutoSize=$true; $c.AutoSizeMode='GrowAndShrink'; $c.Width=$width; $c.Margin=New-Object Windows.Forms.Padding(0)
+ $parent.Controls.Add($c); return $c
+}
+function Card($parent,$height,$width=890) {
+ $c=New-Object Windows.Forms.Panel; $c.Size=New-Object Drawing.Size($width,$height)
+ $c.BackColor=[Drawing.SystemColors]::ControlLightLight; $c.BorderStyle='FixedSingle'
+ $c.Margin=New-Object Windows.Forms.Padding(0,0,0,24); $parent.Controls.Add($c); return $c
+}
+function Provider-Name($id) { return @{codex='Codex';claude='Claude Code';grok='Grok';ollama='Ollama'}[$id] }
+function Provider-Color($id) {
+ $hex=@{codex='#26806E';claude='#C26E4F';grok='#546BB3'}[$id]
+ if ($hex) { return [Drawing.ColorTranslator]::FromHtml($hex) }; return [Drawing.SystemColors]::Highlight
+}
+function Badge($parent,$id,$x,$y) {
+ $c=Label-At $parent (Provider-Name $id) $x $y 150 29 9
+ $c.AutoSize=$true; $c.Padding=New-Object Windows.Forms.Padding(8,3,8,3)
+ $c.Font=New-Object Drawing.Font('Segoe UI',9,[Drawing.FontStyle]::Bold)
+ $color=Provider-Color $id; $c.ForeColor=$color
+ $c.BackColor=[Drawing.Color]::FromArgb([int](229.5+$color.R*.1),[int](229.5+$color.G*.1),[int](229.5+$color.B*.1))
+}
+function Account-Name($a) { if ($a.builtin) { return L ([string]$a.name) }; return [string]$a.name }
+function Is-Server($a) { return ($a.provider -eq 'ollama' -or ($a.provider -eq 'codex' -and $a.endpoint)) }
+function Clear-Children($parent) { while ($parent.Controls.Count) { $parent.Controls[0].Dispose() } }
+function Refresh-State {
+ $script:state=Invoke-Backend 'status'
+ if ($script:state.monitor.usages) {
+  foreach ($entry in $script:state.monitor.usages.PSObject.Properties) {
+   if (-not $script:usageCache[$entry.Name] -or $entry.Value.checked_at -gt $script:usageCache[$entry.Name].checked_at) { $script:usageCache[$entry.Name]=$entry.Value }
+  }
+ }
+ if (-not @($script:state.agents | Where-Object id -eq $script:agentId).Count) {
+  $first=@($script:state.agents) | Select-Object -First 1; $script:agentId=if ($first) { $first.id } else { '' }
+ }
+ Render-Content
+}
+function Refresh-Usage($identity) {
+ try { Set-Message '잔량 조회 중…'; Render-Content; $script:usageCache[$identity]=Invoke-Backend 'usage' @{account_id=$identity}; Set-Message ''; Render-Content }
+ catch { Set-Message ''; Show-Error $_.Exception.Message; Render-Content }
+}
+function Add-Quota($parent,$identity,$width) {
+ $box=New-Object Windows.Forms.Panel; $box.Width=$width; $box.BackColor=[Drawing.ColorTranslator]::FromHtml('#F5F5F5')
+ $box.Margin=New-Object Windows.Forms.Padding(0,8,0,8); $parent.Controls.Add($box)
+ $u=$script:usageCache[$identity]; $y=12
+ if (-not $u) { [void](Label-At $box (L '잔량 새로고침을 누르면 조회합니다.') 12 $y ($width-24) 32 9); $y+=36 }
+ else {
+  $windows=@($u.windows | Where-Object { $_ }); $rows=@($windows | Where-Object is_primary)
+  if ($script:expanded[$identity]) { $rows=$windows }
+  if ($windows.Count -and -not $rows.Count) { [void](Label-At $box (L '기본 사용 한도 정보가 없습니다.') 12 $y ($width-24)); $y+=30 }
+  foreach ($w in $rows) {
+   $percent=[Math]::Max(0.0,[Math]::Min(100.0,[double]$w.remaining_percent))
+   [void](Label-At $box (Localize-QuotaLabel $w.label) 12 $y ([int]($width*.55)) 26 9)
+   $remaining=Label-At $box ((L '%.1f%% 남음').Replace('%.1f',$percent.ToString('F1',[Globalization.CultureInfo]::InvariantCulture)).Replace('%%','%')) ([int]($width*.58)) $y ([int]($width*.38)) 26 9
+   if ($percent -lt 20) { $remaining.ForeColor=[Drawing.ColorTranslator]::FromHtml('#C2650E') }
+   $bar=New-Object Windows.Forms.ProgressBar; $bar.SetBounds(12,($y+27),($width-24),8); $bar.Value=[int]$percent; $box.Controls.Add($bar)
+   if ($percent -lt 20) { [void][BuzzShell]::SendMessage($bar.Handle,0x410,[IntPtr]3,[IntPtr]::Zero) }; $y+=44
+   $reset=[DateTimeOffset]::MinValue
+   if ($w.resets_at -and [DateTimeOffset]::TryParse([string]$w.resets_at,[ref]$reset)) {
+    if ($reset -lt [DateTimeOffset]::Now) { [void](Label-At $box (L '초기화 시각이 지났습니다. 잔량을 새로고침하세요.') 12 $y ($width-24) 38 9); $y+=40 }
+    elseif ($script:expanded[$identity]) { [void](Label-At $box (L '초기화 {0}' @((Display-Date $w.resets_at))) 12 $y ($width-24) 26 9); $y+=28 }
+   }
+  }
+  foreach ($note in @($u.notes)) {
+   if (-not $note) { continue }; $warning=$note -match '사용을 제한|한도 도달'
+   if ($warning -or $script:expanded[$identity]) { $n=Label-At $box (Localize-Backend $note) 12 $y ($width-24) 40 9; if ($warning) { $n.ForeColor=[Drawing.Color]::DarkOrange }; $y+=42 }
+  }
+  if ($u.message) { [void](Label-At $box (Localize-Backend $u.message) 12 $y ($width-24) 44 9); $y+=46 }
+  if ($windows.Count -or @($u.notes).Count) {
+   $toggle=New-Object Windows.Forms.CheckBox; $toggle.Appearance='Button'; $toggle.Text=L '자세히 보기'; $toggle.SetBounds(12,$y,180,30)
+   $toggle.Checked=[bool]$script:expanded[$identity]; $toggle.Tag=$identity
+   $toggle.Add_Click({ $script:expanded[$this.Tag]=$this.Checked; Render-Content }); $box.Controls.Add($toggle); $y+=36
+  }
+  if ($u.checked_at) { [void](Label-At $box (L '조회 {0}' @((Display-Date $u.checked_at))) 12 $y ($width-24) 26 9); $y+=28 }
+ }
+ $box.Height=$y+8; return $box.Height
+}
+function Start-Login($account) {
+ if ($account.id -notmatch '^(codex|claude|grok)-[a-f0-9]+$') { throw (L '로그인을 시작하지 못했습니다. 계정과 CLI 설치를 확인하세요.') }
+ if ($script:logins.ContainsKey($account.id)) { return }
+ $arguments='-NoProfile -ExecutionPolicy Bypass -File "'+"$PSScriptRoot\Login.ps1"+'" -AccountId '+$account.id+' -Language '+$script:language
+ # This console is the documented interactive sign-in UI.
+ $script:logins[$account.id]=Start-Process powershell.exe -ArgumentList $arguments -PassThru
+ Set-Message '로그인 절차를 시작합니다. 브라우저에서 사용할 계정을 확인해 주세요.'; Render-Content
+}
+function Remove-Account($account) {
+ $body=L '{0} 계정을 목록에서 제거합니다. 로그인 파일과 저장된 인증정보는 보관합니다.' @((Account-Name $account))
+ if ($account.builtin) { $body+="`r`n"+(L '숨긴 기본 계정에서 언제든 복원할 수 있습니다.') }
+ if ([Windows.Forms.MessageBox]::Show($form,$body,(L '계정을 목록에서 삭제할까요?'),'YesNo','Question','Button2') -ne 'Yes') { return }
+ try { $r=Invoke-Backend 'delete' @{account_id=$account.id}; Set-Message $r.message; Refresh-State } catch { Show-Error $_.Exception.Message }
+}
+function Show-AccountDialog($account=$null) {
+ $edit=$null -ne $account
+ $dialog=New-Object Windows.Forms.Form; $dialog.ClientSize=New-Object Drawing.Size(550,470)
+ $dialog.AutoScaleDimensions=New-Object Drawing.SizeF(96,96); $dialog.AutoScaleMode='Dpi'
+ $dialog.Font=$form.Font; $dialog.FormBorderStyle='FixedDialog'; $dialog.StartPosition='CenterParent'; $dialog.MaximizeBox=$false; $dialog.MinimizeBox=$false
+ $dialog.Text=if ($edit) { L '계정 정보 수정' } else { L '구독 계정 추가' }
+ [void](Label-At $dialog $dialog.Text 24 20 500 35 16)
+ [void](Label-At $dialog (L '알아보기 쉬운 이름을 붙인 뒤 서비스에 로그인하세요.') 24 60 500 46)
+ [void](Label-At $dialog (L '서비스') 24 110 130)
+ $service=Combo-At $dialog 168 106 354; $service.Items.AddRange(@('Codex','Claude Code','Grok','Ollama')); $providers=@('codex','claude','grok','ollama')
+ $default=if ($edit) { $account.provider } elseif ($script:filter -ne 'all') { $script:filter } else { 'codex' }
+ $service.SelectedIndex=[Array]::IndexOf($providers,$default); $service.Enabled=(-not $edit)
+ [void](Label-At $dialog (L '계정 이름') 24 151 130)
+ $name=New-Object Windows.Forms.TextBox; $name.SetBounds(168,148,354,28); $name.MaxLength=80; $name.AccessibleName=L '계정 이름'; $dialog.Controls.Add($name)
+ if ($edit) { $name.Text=$account.name }
+ $local=New-Object Windows.Forms.CheckBox; $local.Text=L '로컬 OpenAI 호환 서버'; $local.SetBounds(24,190,500,30); $dialog.Controls.Add($local)
+ $local.Checked=($edit -and $account.provider -eq 'codex' -and [bool]$account.endpoint); $local.Enabled=(-not $edit)
+ $addressLabel=Label-At $dialog (L '서버 주소') 24 234 140
+ $address=New-Object Windows.Forms.TextBox; $address.SetBounds(168,230,354,28); $dialog.Controls.Add($address)
+ $address.Text=if ($edit) { [string]$account.endpoint } else { 'http://127.0.0.1:11434' }
+ $hint=Label-At $dialog '' 24 270 500 62 9
+ [void](Label-At $dialog (L '비밀번호와 토큰은 해당 CLI가 보관합니다. 이 앱에는 직접 입력하지 않습니다.') 24 337 500 60 9)
+ $cancel=Button-At $dialog (L '취소') 24 410 120 { $this.FindForm().DialogResult='Cancel' }; $cancel.DialogResult='Cancel'; $dialog.CancelButton=$cancel
+ $submit=Button-At $dialog '' 312 410 210 {}; $dialog.AcceptButton=$submit
+ $update={
+  $p=$providers[$service.SelectedIndex]; $server=$p -eq 'ollama' -or ($p -eq 'codex' -and $local.Checked)
+  $local.Visible=$p -eq 'codex'; $address.Visible=$server; $addressLabel.Visible=$server; $address.Enabled=(-not $edit -or $p -eq 'ollama')
+  $addressLabel.Text=if ($p -eq 'ollama') { L 'Ollama 서버 주소' } else { L '서버 주소' }
+  $hint.Text=if ($p -eq 'codex' -and $server) { L 'Responses API와 도구 호출을 지원하는 서버가 필요합니다. 로그인 없이 연결합니다.' } elseif ($p -eq 'ollama') { L '도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 도구 모음의 새로고침을 누르세요.' } else { L '예: 개인 Pro, 업무 계정' }
+  $submit.Text=if ($edit) { L '저장' } elseif ($server) { L '서버 추가' } else { L '추가하고 로그인' }
+  $submit.Enabled=$name.Text.Trim().Length -gt 0 -and (-not $server -or $address.Text.Trim().Length -gt 0)
+ }
+ $service.Add_SelectedIndexChanged($update); $local.Add_CheckedChanged($update); $name.Add_TextChanged($update); $address.Add_TextChanged($update)
+ $submit.Add_Click({
+  try {
+   $p=$providers[$service.SelectedIndex]; $body=@{name=$name.Text;provider=$p}
+   if ($p -eq 'ollama' -or ($p -eq 'codex' -and $local.Checked)) { $body.endpoint=$address.Text }
+   if ($edit) { $body.account_id=$account.id; $created=Invoke-Backend 'update' $body; Set-Message '계정 정보를 저장했습니다.' } else { $created=Invoke-Backend 'create' $body }
+   $dialog.Tag=$created; $dialog.DialogResult='OK'
+  } catch { Show-Error $_.Exception.Message }
+ })
+ & $update
+ try { if ($dialog.ShowDialog($form) -eq 'OK') { $created=$dialog.Tag; Refresh-State; if (-not $edit -and -not (Is-Server $created)) { Start-Login $created } } } finally { $dialog.Dispose() }
+}
+function Render-Accounts {
+ $stack=Stack $accountPage; $stack.Location=New-Object Drawing.Point(32,24)
+ $header=New-Object Windows.Forms.Panel; $header.Size=New-Object Drawing.Size(890,132); $stack.Controls.Add($header)
+ [void](Label-At $header (L '구독 계정') 0 0 430 42 20)
+ [void](Label-At $header (L '서비스마다 여러 계정을 등록하고 에이전트에 연결하세요.') 0 46 540 40)
+ [void](Button-At $header (L '잔량 새로고침') 550 4 168 {
+  try { foreach ($a in @($script:state.accounts)) { if (-not $script:logins.ContainsKey($a.id)) { $script:usageCache[$a.id]=Invoke-Backend 'usage' @{account_id=$a.id} } }; Render-Content } catch { Show-Error $_.Exception.Message }
+ })
+ [void](Button-At $header (L '계정 추가') 732 4 152 { Show-AccountDialog })
+ [void](Label-At $header (Message-Text) 0 87 880 42 9)
+ $filters=New-Object Windows.Forms.FlowLayoutPanel; $filters.Size=New-Object Drawing.Size(890,42); $filters.AccessibleName=L '프로바이더 필터'; $stack.Controls.Add($filters)
+ foreach ($id in @('all','codex','claude','grok','ollama')) {
+  $count=if ($id -eq 'all') { @($script:state.accounts).Count } else { @($script:state.accounts | Where-Object provider -eq $id).Count }
+  $title=if ($id -eq 'all') { L '전체' } elseif ($id -eq 'claude') { 'Claude' } else { Provider-Name $id }
+  $r=New-Object Windows.Forms.RadioButton; $r.Appearance='Button'; $r.FlatStyle='System'; $r.Text="$title ($count)"; $r.AutoSize=$true
+  $r.MinimumSize=New-Object Drawing.Size(100,28); $r.Margin=New-Object Windows.Forms.Padding(0); $r.Tag=$id; $r.Checked=$script:filter -eq $id
+  $r.Add_Click({ $script:filter=$this.Tag; Render-Content }); $filters.Controls.Add($r)
+ }
+ $visible=@($script:state.accounts | Where-Object { $script:filter -eq 'all' -or $_.provider -eq $script:filter })
+ if (-not $visible.Count) { $empty=Card $stack 130; $text=Label-At $empty (L '표시할 계정이 없습니다.') 20 22 850 35; $text.TextAlign='MiddleCenter'; [void](Button-At $empty (L '계정 추가') 345 70 200 { Show-AccountDialog }) }
+ foreach ($p in @('codex','claude','grok','ollama')) {
+  $group=@($visible | Where-Object provider -eq $p); if (-not $group.Count) { continue }
+  $card=Card $stack 100; Badge $card $p 22 18; $blocks=Stack $card 842; $blocks.Location=New-Object Drawing.Point(22,57); $total=57
+  foreach ($a in $group) {
+   $block=New-Object Windows.Forms.Panel; $block.Width=842; $block.Margin=New-Object Windows.Forms.Padding(0,0,0,9); $blocks.Controls.Add($block)
+   $accountIcon=Label-At $block ([string][char]$(if ($a.builtin) { 0xE7F4 } else { 0xE77B })) 0 0 32 32 16
+   $accountIcon.Font=New-Object Drawing.Font('Segoe MDL2 Assets',16)
+   [void](Label-At $block (Account-Name $a) 46 0 439 28 11)
+   if (-not $a.builtin) { $edit=Button-At $block (L '계정 정보 수정') 650 0 180 { Show-AccountDialog $this.Tag }; $edit.Tag=$a }
+   $server=Is-Server $a
+   $statusKey=if ($server) { if ($a.ready) { '서버 연결됨' } else { '서버 연결 필요' } } else { if ($a.ready) { '로그인 정보 있음' } else { '로그인 필요' } }
+   $stateLabel=Label-At $block (L $statusKey) 0 34 560 26 9; if (-not $a.ready) { $stateLabel.ForeColor=[Drawing.Color]::DarkOrange }
+   $path=New-Object Windows.Forms.TextBox; $path.Text=if ($server) { $a.endpoint } else { $a.home }; $path.ReadOnly=$true; $path.BorderStyle='None'; $path.BackColor=$block.BackColor
+   $path.Font=New-Object Drawing.Font('Consolas',9); $path.SetBounds(0,64,830,24); $block.Controls.Add($path)
+   if ($server -or -not $a.builtin) {
+    $key=if ($server) { '연결 확인' } elseif ($a.ready) { '다시 로그인' } else { '로그인' }
+    $main=Button-At $block (L $key) 650 34 180 { try { if (Is-Server $this.Tag) { Refresh-State } else { Start-Login $this.Tag } } catch { Show-Error $_.Exception.Message } }
+    $main.Tag=$a; $main.Enabled=(-not $script:logins.ContainsKey($a.id))
+   } else { [void](Label-At $block (L '기본 계정') 650 36 180 26 9) }
+   $quota=Stack $block 830; $quota.Location=New-Object Drawing.Point(0,90); $qh=Add-Quota $quota $a.id 830; $y=90+$qh+16
+   $refresh=Button-At $block (L '이 계정 잔량 새로고침') 0 $y 360 { Refresh-Usage $this.Tag }; $refresh.Tag=$a.id; $refresh.Enabled=(-not $script:logins.ContainsKey($a.id))
+   $delete=Button-At $block (L '계정 삭제') 650 $y 180 { Remove-Account $this.Tag }; $delete.Tag=$a; $delete.Enabled=(-not $script:logins.ContainsKey($a.id)); $delete.ForeColor=[Drawing.Color]::Firebrick
+   $block.Height=$y+43; $total+=$block.Height+9
+  }; $card.Height=$total+18
+ }
+ $hidden=@($script:state.hidden_accounts | Where-Object { $_.builtin -and ($script:filter -eq 'all' -or $_.provider -eq $script:filter) })
+ if ($hidden.Count) {
+  $panel=Card $stack (48+$(if ($script:hiddenOpen) { 42*$hidden.Count } else { 0 }))
+  $toggle=New-Object Windows.Forms.CheckBox; $toggle.Appearance='Button'; $toggle.Text=(L '숨긴 기본 계정')+" ($($hidden.Count))"; $toggle.SetBounds(12,8,500,32)
+  $toggle.Checked=$script:hiddenOpen; $toggle.Add_Click({ $script:hiddenOpen=$this.Checked; Render-Content }); $panel.Controls.Add($toggle)
+  if ($script:hiddenOpen) {
+   $y=48; foreach ($a in $hidden) {
+    [void](Label-At $panel ((Provider-Name $a.provider)+' · '+(Account-Name $a)) 22 $y 620 34)
+    $restore=Button-At $panel (L '복원') 688 $y 174 { try { $r=Invoke-Backend 'restore' @{account_id=$this.Tag}; Set-Message $r.message; Refresh-State } catch { Show-Error $_.Exception.Message } }
+    $restore.Tag=$a.id; $restore.Enabled=$script:logins.Count -eq 0; $y+=42
+   }
+  }
+ }
+ foreach ($key in @('잔량은 서비스가 제공한 구독 한도의 남은 비율입니다. 정확한 토큰 수로 환산하지 않습니다. 조회 시각 이후의 사용량은 새로고침하면 반영됩니다.','새 계정은 별도 경로에 로그인합니다. 기존 CLI의 기본 계정은 변경하지 않습니다.','별도 계정은 CLI 설정과 세션도 분리됩니다. 로그인 만료·구독 한도·모델 접근 권한은 서비스가 실행 시 확인합니다.')) {
+  $note=Label-At $stack (L $key) 0 0 880 48 9; $note.ForeColor=[Drawing.SystemColors]::GrayText
+ }
+}
+function Fill-Fallbacks {
+ if ($script:loading) { return }
+ $script:loading=$true
+ try {
+  $selected=@($fallbacks | ForEach-Object { if ($_.SelectedItem) { $_.SelectedItem.id } else { '' } })
+  for ($i=0; $i -lt 3; $i++) {
+   $combo=$fallbacks[$i]; $combo.Items.Clear(); [void]$combo.Items.Add([pscustomobject]@{id='';name=(L '선택 안 함')})
+   foreach ($a in @($script:state.accounts | Where-Object provider -eq $provider.SelectedItem)) {
+    if ($a.id -eq $assigned.SelectedItem.id -or ($selected -contains $a.id -and $selected[$i] -ne $a.id)) { continue }
+    $title=Account-Name $a; if (-not $a.ready) { $title+=' · '+(L '로그인 필요') }
+    [void]$combo.Items.Add([pscustomobject]@{id=$a.id;name=$title})
+   }
+   $combo.SelectedIndex=0
+   for ($j=0; $j -lt $combo.Items.Count; $j++) { if ($combo.Items[$j].id -eq $selected[$i]) { $combo.SelectedIndex=$j } }
+  }
+ } finally { $script:loading=$false }
 }
 function Fill-Efforts {
-    $previous = $effort.Text
-    $effort.Items.Clear()
-    [void]$effort.Items.Add('')
-    $known = @($assigned.SelectedItem.models | Where-Object id -eq $model.Text) | Select-Object -First 1
-    if ($provider.Text -eq 'ollama') { $levels = @() }
-    elseif ($known) { $levels = @($known.efforts) }
-    elseif ($provider.Text -eq 'claude') { $levels = @('low','medium','high','xhigh','max') }
-    else { $levels = @('low','medium','high','xhigh','max','ultra') }
-    foreach ($level in $levels) { [void]$effort.Items.Add([string]$level) }
-    $effort.SelectedIndex = 0
-    if ($effort.Items.Contains($previous)) { $effort.SelectedItem = $previous }
+ $previous=$effort.SelectedItem; $effort.Items.Clear(); [void]$effort.Items.Add((L '모델 기본값'))
+ $known=@($assigned.SelectedItem.models | Where-Object id -eq $model.Text) | Select-Object -First 1
+ $levels=if ($provider.SelectedItem -eq 'ollama' -or (Is-Server $assigned.SelectedItem)) { @() } elseif ($known) { @($known.efforts) } elseif ($provider.SelectedItem -eq 'claude') { @('low','medium','high','xhigh','max') } else { @('low','medium','high','xhigh','max','ultra') }
+ foreach ($level in $levels) { [void]$effort.Items.Add([string]$level) }
+ $effort.SelectedIndex=0; if ($previous -and $effort.Items.Contains($previous)) { $effort.SelectedItem=$previous }
+ Update-Save
 }
-function Select-Agent {
-    if ($script:loading -or -not $agents.SelectedItem) { return }
-    $a = $agents.SelectedItem
-    $provider.SelectedItem = $a.provider
-    Fill-Accounts
-    for ($i=0; $i -lt $assigned.Items.Count; $i++) {
-        if ($assigned.Items[$i].id -eq $a.account_id) { $assigned.SelectedIndex = $i }
-    }
-    $model.Text = $a.model; $effort.SelectedItem = [string]$a.effort
-    for ($i=0; $i -lt $fallback.Items.Count; $i++) {
-        $fallback.SetItemChecked($i, ($a.fallback_ids -contains $fallback.Items[$i].id))
-    }
-    $automatic.Checked = [bool]$a.auto_fallback
+function Update-Save {
+ if ($save) { $save.Enabled=($assigned.SelectedItem -and $assigned.SelectedItem.ready -and $model.Text.Trim().Length -gt 0 -and -not $script:busy) }
 }
-function Refresh-State {
-    $next = Invoke-Backend 'status'
-    $script:loading = $true
-    try {
-        $script:state = $next
-        $agents.Items.Clear(); $accounts.Items.Clear()
-        foreach ($a in $next.agents) { [void]$agents.Items.Add($a) }
-        foreach ($a in $next.accounts) { [void]$accounts.Items.Add($a) }
-        if ($agents.Items.Count) { $agents.SelectedIndex = 0 }
-        if ($accounts.Items.Count) { $accounts.SelectedIndex = 0 }
-        $status.Text = '에이전트 ' + $agents.Items.Count + '개 · 계정 ' + $accounts.Items.Count + '개'
-    } finally { $script:loading = $false }
-    Select-Agent
+function Fill-Models {
+ $model.Items.Clear()
+ foreach ($m in @($assigned.SelectedItem.models)) { if ($m) { [void]$model.Items.Add([string]$m.id) } }
+ if ($model.Items.Count) { $model.SelectedIndex=0 } else { $model.Text='' }
+ $manual.Enabled=$provider.SelectedItem -ne 'ollama'
+ $manual.Checked=$model.Items.Count -eq 0 -and $manual.Enabled
+ $model.DropDownStyle=if ($manual.Checked) { 'DropDown' } else { 'DropDownList' }
+ $accountState.Text=if ($assigned.SelectedItem.ready) { L '저장된 로그인 정보가 있습니다.' } else { L '계정 설정에서 먼저 로그인하세요.' }
+ if (Is-Server $assigned.SelectedItem) { $accountState.Text=[string]$assigned.SelectedItem.endpoint+' · '+(L '도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 도구 모음의 새로고침을 누르세요.') }
+ $modelHint.Text=if ($provider.SelectedItem -eq 'ollama') { if ($model.Items.Count) { L 'Ollama 설치 모델' } else { L '사용할 로컬 모델이 없습니다. Ollama 서버에 도구 호출을 지원하는 모델을 설치하고 새로고침하세요.' } } elseif ($provider.SelectedItem -eq 'claude') { L 'CLI 모델 별칭' } else { L '로컬 모델 캐시' }
+ $effortHint.Text=if ($provider.SelectedItem -eq 'ollama') { L 'Ollama는 모델의 기본 추론 설정을 사용합니다. 구독 계정의 사용량은 차감하지 않습니다.' } elseif (Is-Server $assigned.SelectedItem) { L '서버에 설치된 로컬 모델을 선택하세요.' } else { L '높을수록 더 오래 생각하며 구독 사용량이 늘 수 있습니다. 지원 범위는 모델마다 다릅니다.' }
+ $fallbackPanel.Visible=($provider.SelectedItem -in @('codex','claude') -and -not (Is-Server $assigned.SelectedItem))
+ $automatic.Checked=$false; Fill-Fallbacks; Fill-Efforts
 }
-
-$form = New-Object System.Windows.Forms.Form
-$form.Text = 'Buzz Account Manager · Windows Preview'
-$form.ShowInTaskbar = $true
-$form.ShowIcon = $true
-$iconPath = Join-Path $PSScriptRoot 'AppIcon.png'
-if (Test-Path $iconPath) {
-    $bitmap = New-Object System.Drawing.Bitmap($iconPath)
-    $iconHandle = $bitmap.GetHicon()
-    try { $form.Icon = [System.Drawing.Icon]::FromHandle($iconHandle).Clone() }
-    finally { [void][BuzzShell]::DestroyIcon($iconHandle); $bitmap.Dispose() }
+function Fill-Accounts {
+ $script:loading=$true
+ try {
+  $assigned.Items.Clear()
+  foreach ($a in @($script:state.accounts | Where-Object provider -eq $provider.SelectedItem)) {
+   $copy=$a.PSObject.Copy(); $copy.name=Account-Name $a; [void]$assigned.Items.Add($copy)
+  }
+  if ($assigned.Items.Count) { $assigned.SelectedIndex=0 }
+  foreach ($combo in $fallbacks) { $combo.Items.Clear() }
+ } finally { $script:loading=$false }
+ Fill-Models
 }
-$form.ClientSize = New-Object System.Drawing.Size(950,690)
-$form.MinimumSize = $form.Size
-$form.StartPosition = 'CenterScreen'
-$form.Font = New-Object System.Drawing.Font('Malgun Gothic',10)
-$tabs = New-Object System.Windows.Forms.TabControl
-$tabs.Location = New-Object System.Drawing.Point(16,16)
-$tabs.Size = New-Object System.Drawing.Size(918,600)
-$tabs.Anchor = 'Top,Bottom,Left,Right'
-$form.Controls.Add($tabs)
-$agentTab = New-Object System.Windows.Forms.TabPage; $agentTab.Text = '에이전트 설정'
-$accountTab = New-Object System.Windows.Forms.TabPage; $accountTab.Text = '계정 관리'
-$tabs.TabPages.AddRange(@($agentTab,$accountTab))
-$agents = New-Object System.Windows.Forms.ListBox
-$agents.Location = New-Object System.Drawing.Point(16,20); $agents.Size = New-Object System.Drawing.Size(250,490)
-$agents.DisplayMember = 'name'; $agentTab.Controls.Add($agents)
-Label-At $agentTab '서비스' 290 24
-$provider = Combo-At $agentTab 425 20 430
-$provider.Items.AddRange(@('codex','claude','grok','ollama'))
-Label-At $agentTab '사용할 계정' 290 70
-$assigned = Combo-At $agentTab 425 66 430; $assigned.DisplayMember = 'name'
-Label-At $agentTab '모델 ID' 290 116
-$model = Combo-At $agentTab 425 112 430 $true
-Label-At $agentTab '추론 강도' 290 162
-$effort = Combo-At $agentTab 425 158 430
-[void]$effort.Items.Add('')
-Label-At $agentTab '예비 계정 (최대 3개)' 290 212 280
-$fallback = New-Object System.Windows.Forms.CheckedListBox
-$fallback.Location = New-Object System.Drawing.Point(290,244); $fallback.Size = New-Object System.Drawing.Size(565,120)
-$fallback.DisplayMember = 'name'; $fallback.CheckOnClick = $true; $agentTab.Controls.Add($fallback)
-$automatic = New-Object System.Windows.Forms.CheckBox
-$automatic.Text = '잔량이 소진되면 예비 계정으로 자동 전환'; $automatic.Location = New-Object System.Drawing.Point(290,377)
-$automatic.Size = New-Object System.Drawing.Size(565,30); $agentTab.Controls.Add($automatic)
-Label-At $agentTab '저장 전에 Buzz를 종료하세요. 저장 후 Buzz를 다시 실행하세요.' 290 420 590
-Label-At $agentTab '자동 전환은 Buzz 종료를 요청합니다. 진행 중인 응답이 끊길 수 있습니다.' 290 450 600
-$save = Button-At $agentTab '설정 저장' 290 493 180 {
-    try {
-        if (-not $agents.SelectedItem -or -not $assigned.SelectedItem) { throw '에이전트와 계정을 선택하세요.' }
-        $ids = @($fallback.CheckedItems | ForEach-Object { $_.id })
-        $request = @{ agent_id=$agents.SelectedItem.id; account_id=$assigned.SelectedItem.id; provider=$provider.Text;
-                      model=$model.Text; effort=$effort.Text; revision=$script:state.revision;
-                      fallback_ids=$ids; auto_fallback=$automatic.Checked; expected_account_id=$agents.SelectedItem.account_id }
-        if ($automatic.Checked) { $null = Invoke-Backend 'install-monitor' }
-        $result = Invoke-Backend 'apply' $request
-        Refresh-State
-        [void][System.Windows.Forms.MessageBox]::Show('저장했습니다. Buzz를 다시 실행하세요.', 'Buzz Account Manager')
-    } catch { Show-Error $_.Exception.Message }
+function Save-Agent {
+ if (-not $save.Enabled -or $script:saving) { return }
+ $script:saving=$true; $form.Enabled=$false
+ try {
+  $a=@($script:state.agents | Where-Object id -eq $script:agentId)[0]
+  $ids=@($fallbacks | ForEach-Object { if ($_.SelectedItem.id) { $_.SelectedItem.id } })
+  $request=@{agent_id=$a.id;account_id=$assigned.SelectedItem.id;provider=[string]$provider.SelectedItem;model=$model.Text;
+   effort=$(if ($effort.SelectedIndex -gt 0) { [string]$effort.SelectedItem } else { '' });revision=$script:state.revision;
+   fallback_ids=$ids;auto_fallback=($automatic.Checked -and $fallbackPanel.Visible);expected_account_id=$a.account_id}
+  $saveMessage.Text=L '로그인과 모델 설정을 확인하는 중…'
+  $null=Invoke-Backend 'validate' $request
+  $saveMessage.Text=L 'Buzz를 정상 종료하는 중…'
+  $null=Invoke-Backend 'stop-buzz'
+  $deadline=[DateTime]::UtcNow.AddSeconds(10)
+  do {
+   $running=(Invoke-Backend 'status').buzz_running
+   if (-not $running) { break }
+   $pause=[Diagnostics.Stopwatch]::StartNew()
+   while ($pause.ElapsedMilliseconds -lt 200) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 20 }
+  } while ([DateTime]::UtcNow -lt $deadline)
+  if ($running) { throw (L 'Buzz를 종료하지 못했습니다. 직접 종료한 뒤 다시 적용하세요.') }
+  $saveMessage.Text=L '설정을 백업하고 저장하는 중…'
+  if ($request.auto_fallback) { $null=Invoke-Backend 'install-monitor' }
+  $null=Invoke-Backend 'apply' $request
+  Set-Message '{0} 설정을 저장했습니다. Buzz는 직접 시작하세요.' @($a.name); Refresh-State
+ } catch { Show-Error $_.Exception.Message }
+ finally { $script:saving=$false; $form.Enabled=$true; $form.UseWaitCursor=$false; Update-Save }
 }
-$model.Add_TextChanged({ Fill-Efforts })
-$agents.Add_SelectedIndexChanged({ Select-Agent })
-$provider.Add_SelectedIndexChanged({ if (-not $script:loading) { Fill-Accounts } })
-$assigned.Add_SelectedIndexChanged({ if (-not $script:loading) { Fill-Models } })
-
-$accounts = New-Object System.Windows.Forms.ListBox
-$accounts.Location = New-Object System.Drawing.Point(16,20); $accounts.Size = New-Object System.Drawing.Size(320,400)
-$accounts.DisplayMember = 'name'; $accountTab.Controls.Add($accounts)
-Label-At $accountTab '계정 이름' 360 24
-$name = New-Object System.Windows.Forms.TextBox; $name.Location = New-Object System.Drawing.Point(490,20)
-$name.Size = New-Object System.Drawing.Size(365,28); $accountTab.Controls.Add($name)
-Label-At $accountTab '서비스' 360 70
-$newProvider = Combo-At $accountTab 490 66 365
-$newProvider.Items.AddRange(@('codex','claude','grok','ollama')); $newProvider.SelectedIndex = 0
-Label-At $accountTab 'Ollama 주소' 360 116
-$endpoint = New-Object System.Windows.Forms.TextBox; $endpoint.Location = New-Object System.Drawing.Point(490,112)
-$endpoint.Size = New-Object System.Drawing.Size(365,28); $endpoint.Text='http://127.0.0.1:11434'; $accountTab.Controls.Add($endpoint)
-$add = Button-At $accountTab '계정 추가' 360 158 160 {
-    try {
-        $created = Invoke-Backend 'create' @{name=$name.Text; provider=$newProvider.Text; endpoint=$endpoint.Text}
-        Refresh-State
-        Select-AccountById $created.id
-    } catch { Show-Error $_.Exception.Message }
+function Render-Agents {
+ $listPanel=New-Object Windows.Forms.Panel; $listPanel.Dock='Left'; $listPanel.Width=260; $agentPage.Controls.Add($listPanel)
+ [void](Label-At $listPanel (L '에이전트') 16 16 228 30 13)
+ [void](Label-At $listPanel (L '이 컴퓨터의 에이전트') 16 48 228 42 9)
+ $list=New-Object Windows.Forms.ListView; $list.SetBounds(8,94,244,530); $list.Anchor='Top,Bottom,Left,Right'
+ $list.View='Details'; $list.FullRowSelect=$true; $list.HeaderStyle='None'; $list.MultiSelect=$false; $list.HideSelection=$false
+ [void]$list.Columns.Add((L '계정 이름'),150); [void]$list.Columns.Add((L '서비스'),90); $listPanel.Controls.Add($list)
+ foreach ($a in @($script:state.agents)) {
+  $item=New-Object Windows.Forms.ListViewItem([string]$a.name); $item.Tag=$a.id; $item.UseItemStyleForSubItems=$false
+  $sub=$item.SubItems.Add((Provider-Name $a.provider)); $sub.ForeColor=Provider-Color $a.provider
+  [void]$list.Items.Add($item); if ($a.id -eq $script:agentId) { $item.Selected=$true }
+ }
+ $editor=New-Object Windows.Forms.Panel; $editor.Dock='Fill'; $editor.AutoScroll=$true; $editor.Padding=New-Object Windows.Forms.Padding(24)
+ $agentPage.Controls.Add($editor); $editor.BringToFront()
+ $a=@($script:state.agents | Where-Object id -eq $script:agentId) | Select-Object -First 1
+ if (-not $a) {
+  [void](Label-At $listPanel (L '등록된 에이전트가 없습니다. Buzz에서 에이전트를 만든 뒤 새로고침하세요.') 16 94 225 120)
+  [void](Label-At $editor (L '에이전트를 선택하세요') 24 24 550 40 20)
+  [void](Label-At $editor (L 'Buzz에 등록된 에이전트가 왼쪽에 표시됩니다.') 24 80 550 60); return
+ }
+ $list.Add_SelectedIndexChanged({
+  if ($this.SelectedItems.Count -and $this.SelectedItems[0].Tag -ne $script:agentId) {
+   $script:agentId=$this.SelectedItems[0].Tag
+   [void]$this.BeginInvoke([Action]{ if (-not $form.IsDisposed) { Render-Content } })
+  }
+ })
+ $stack=Stack $editor 730; $stack.Location=New-Object Drawing.Point(24,24)
+ $head=Card $stack 124 730; [void](Label-At $head $a.name 22 12 465 42 20); Badge $head $a.provider 540 18
+ [void](Label-At $head (L '구독 계정과 생각의 깊이를 선택하세요.') 22 58 680 26)
+ [void](Label-At $head (L '이름 · Buzz 신원 · 팀은 그대로 유지합니다.') 22 88 680 26 9)
+ $usage=Card $stack 120 730; [void](Label-At $usage (L '현재 구독 계정 잔량') 22 16 460 30 12)
+ $current=@($script:state.accounts | Where-Object id -eq $a.account_id) | Select-Object -First 1
+ [void](Label-At $usage $(if ($current) { Account-Name $current } else { L '계정 등록 필요' }) 22 46 430 28)
+ $ur=Button-At $usage (L '잔량 새로고침') 526 18 180 { Refresh-Usage $this.Tag }; $ur.Tag=$a.account_id; $ur.Enabled=$null -ne $current
+ $qs=Stack $usage 682; $qs.Location=New-Object Drawing.Point(22,80); $usage.Height=100+(Add-Quota $qs $a.account_id 682)
+ $settings=Card $stack 1010 730
+ [void](Label-At $settings ('01  '+(L 'AI 서비스')) 22 18 680 28 12)
+ $script:provider=Combo-At $settings 22 52 680; $provider.Items.AddRange(@('codex','claude','grok','ollama'))
+ $provider.FormattingEnabled=$true; $provider.Add_Format({ $_.Value=Provider-Name ([string]$_.ListItem) })
+ [void](Label-At $settings ('02  '+(L '구독 계정')) 22 99 680 28 12)
+ $script:assigned=Combo-At $settings 22 134 480; $assigned.DisplayMember='name'
+ [void](Button-At $settings (L '계정 추가') 520 132 182 { Show-AccountDialog })
+ $script:accountState=Label-At $settings '' 22 174 680 42 9
+ $script:fallbackPanel=New-Object Windows.Forms.Panel; $fallbackPanel.SetBounds(22,216,680,370); $settings.Controls.Add($fallbackPanel)
+ [void](Label-At $fallbackPanel (L '예비 구독 계정 · 최대 3개') 0 0 670 30 11)
+ $script:fallbacks=@()
+ for ($i=0; $i -lt 3; $i++) {
+  [void](Label-At $fallbackPanel (L '예비 {0}' @([string]($i+1))) 0 (38+$i*38) 120 30 9)
+  $c=Combo-At $fallbackPanel 130 (34+$i*38) 540; $c.DisplayMember='name'; $script:fallbacks+=,$c
+  $c.Add_SelectedIndexChanged({ if (-not $script:loading) { Fill-Fallbacks } })
+ }
+ $script:automatic=New-Object Windows.Forms.CheckBox; $automatic.Text=L '한도 소진 시 예비 계정으로 자동 전환'; $automatic.SetBounds(0,154,670,38); $fallbackPanel.Controls.Add($automatic)
+ [void](Label-At $fallbackPanel (L '5분마다 잔량을 조회하고 위 순서대로 전환합니다. 모델과 effort는 유지합니다. 조회 실패 시에는 전환하지 않습니다.') 0 198 670 50 9)
+ $warning=Label-At $fallbackPanel (L '앱을 닫아도 이 컴퓨터에 로그인한 동안 동작합니다. 계정을 전환하면 실행 중인 Buzz를 종료합니다. Buzz는 직접 시작하세요.') 0 250 670 60 9; $warning.ForeColor=[Drawing.Color]::DarkOrange
+ if ($script:state.monitor.checked_at) { [void](Label-At $fallbackPanel (L '자동 조회: {0}' @((Display-Date $script:state.monitor.checked_at))) 0 310 670 26 9) }
+ $events=@($script:state.monitor.last_events | ForEach-Object { Localize-Backend $_ }) -join ' / '
+ [void](Label-At $fallbackPanel $events 0 338 670 32 9)
+ [void](Label-At $settings ('03  '+(L '모델')) 22 596 680 28 12)
+ $script:model=Combo-At $settings 22 632 680
+ $script:manual=New-Object Windows.Forms.CheckBox; $manual.Text=L '모델 ID 직접 입력'; $manual.SetBounds(22,668,670,30); $settings.Controls.Add($manual)
+ $script:modelHint=Label-At $settings '' 22 704 680 46 9
+ [void](Label-At $settings ('04  '+(L 'Effort')) 22 762 680 28 12)
+ $script:effort=Combo-At $settings 22 798 680
+ $script:effortHint=Label-At $settings '' 22 834 680 46 9
+ [void](Label-At $settings (L '설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.') 22 897 680 36)
+ [void](Label-At $settings (L '실행 중인 Buzz는 종료되며 모든 에이전트의 응답이 중단될 수 있습니다.') 22 939 680 56 9)
+ $footer=Card $stack 144 730
+ $script:save=Button-At $footer (L '설정 저장') 520 16 182 { Save-Agent }
+ $script:saveMessage=Label-At $footer (Message-Text) 22 64 680 64
+ $provider.SelectedItem=$a.provider; Fill-Accounts
+ for ($i=0; $i -lt $assigned.Items.Count; $i++) { if ($assigned.Items[$i].id -eq $a.account_id) { $assigned.SelectedIndex=$i } }
+ Fill-Models
+ if ($model.Items.Contains([string]$a.model)) { $model.SelectedItem=[string]$a.model } elseif ($provider.SelectedItem -ne 'ollama') { $manual.Checked=$true; $model.DropDownStyle='DropDown'; $model.Text=[string]$a.model }
+ Fill-Efforts; if ($effort.Items.Contains([string]$a.effort)) { $effort.SelectedItem=[string]$a.effort }
+ $script:loading=$true
+ for ($i=0; $i -lt [Math]::Min(3,@($a.fallback_ids).Count); $i++) { for ($j=0; $j -lt $fallbacks[$i].Items.Count; $j++) { if ($fallbacks[$i].Items[$j].id -eq $a.fallback_ids[$i]) { $fallbacks[$i].SelectedIndex=$j } } }
+ $script:loading=$false; Fill-Fallbacks; $automatic.Checked=[bool]$a.auto_fallback
+ $provider.Add_SelectedIndexChanged({ if (-not $script:loading) { Fill-Accounts } })
+ $assigned.Add_SelectedIndexChanged({ if (-not $script:loading) { Fill-Models } })
+ $model.Add_TextChanged({ Fill-Efforts }); $manual.Add_CheckedChanged({ $model.DropDownStyle=if ($this.Checked) { 'DropDown' } else { 'DropDownList' } })
+ Update-Save
 }
-$saveAccount = Button-At $accountTab '변경 저장' 525 158 160 {
-    try {
-        if (-not $accounts.SelectedItem) { throw '수정할 계정을 선택하세요.' }
-        $identity = $accounts.SelectedItem.id
-        $null = Invoke-Backend 'update' @{account_id=$identity; name=$name.Text; endpoint=$endpoint.Text}
-        Refresh-State
-        Select-AccountById $identity
-        $status.Text = '계정 정보를 저장했습니다. 실행 중인 에이전트에는 Buzz 재시작 후 적용됩니다.'
-    } catch { Show-Error $_.Exception.Message }
+function Render-General {
+ $stack=Stack $generalPage; $stack.Location=New-Object Drawing.Point(32,24); [void](Label-At $stack (L '일반 설정') 0 0 890 60 20)
+ $card=Card $stack 130; [void](Label-At $card (L '언어') 24 24 300 32 12)
+ $choice=Combo-At $card 24 68 520; $choice.Items.AddRange(@((L '시스템 설정'),'한국어','English','Tiếng Việt'))
+ $choice.SelectedIndex=[Array]::IndexOf(@('system','ko','en','vi'),$script:selection)
+ $choice.Add_SelectedIndexChanged({
+  $script:selection=@('system','ko','en','vi')[$this.SelectedIndex]
+  if (-not (Test-Path $settingsKey)) { [void](New-Item $settingsKey -Force) }
+  [void](New-ItemProperty $settingsKey -Name DisplayLanguage -Value $script:selection -PropertyType String -Force)
+  Apply-Language
+ })
+ $card=Card $stack 224; [void](Label-At $card (L '로컬 설정') 24 24 820 32 12)
+ $paths=@((Join-Path $env:USERPROFILE '.config\buzz-agents\account-manager.json'),(Join-Path $env:APPDATA 'xyz.block.buzz.app\agents\managed-agents.json'))
+ for ($i=0; $i -lt 2; $i++) { $text=New-Object Windows.Forms.TextBox; $text.ReadOnly=$true; $text.Text=$paths[$i]; $text.SetBounds(24,(72+$i*34),835,28); $text.Font=New-Object Drawing.Font('Consolas',9); $card.Controls.Add($text) }
+ [void](Label-At $card (L '계정 정보는 이 컴퓨터에 저장합니다. 설치 파일에는 사용자 계정이나 인증정보가 없습니다.') 24 150 835 62 9)
+ $card=Card $stack 176; [void](Label-At $card (L '정보') 24 20 820 30 12)
+ [void](Label-At $card (L 'Buzz 계정 관리') 24 60 820 30)
+ [void](Label-At $card (L '버전 {0}' @('1.2.0-preview.2')) 24 95 820 26)
+ [void](Label-At $card (L 'Windows 미리보기 — 실기 검증 전') 24 130 820 32 9)
 }
-$newAccount = Button-At $accountTab '새 계정 입력' 690 158 165 {
-    $accounts.ClearSelected()
-    $name.Clear(); $name.Enabled=$true
-    $newProvider.Enabled=$true; $add.Enabled=$true; $saveAccount.Enabled=$false
-    $endpoint.Text='http://127.0.0.1:11434'
-    $endpoint.Enabled=($newProvider.Text -eq 'ollama')
-    $details.Clear(); $name.Focus()
+function Render-Content {
+ $form.SuspendLayout()
+ try {
+  foreach ($p in @($accountPage,$agentPage,$generalPage)) { Clear-Children $p; $p.Visible=$false }
+  $page=@{accounts=$accountPage;agents=$agentPage;general=$generalPage}[$script:section]; $page.Visible=$true
+  if ($script:section -eq 'general') { Render-General }
+  elseif (-not $script:state) { [void](Label-At $page (L 'Buzz 설정을 불러오세요.') 32 32 800 60 20) }
+  elseif ($script:section -eq 'accounts') { Render-Accounts } else { Render-Agents }
+  # These controls are created after Form's initial Dpi autoscale pass.
+  # Scale each fresh tree once; point-sized fonts already use the device DPI.
+  $graphics=$form.CreateGraphics()
+  try { $scale=$graphics.DpiX/96.0 } finally { $graphics.Dispose() }
+  if ([Math]::Abs($scale-1) -gt 0.01) { foreach ($child in $page.Controls) { $child.Scale((New-Object Drawing.SizeF($scale,$scale))) } }
+  foreach ($button in $railButtons) { $button.BackColor=if ($button.Tag -eq $script:section) { [Drawing.ColorTranslator]::FromHtml('#E2F4F7') } else { [Drawing.SystemColors]::Control }; $button.ForeColor=if ($button.Tag -eq $script:section) { [Drawing.SystemColors]::ControlText } else { [Drawing.SystemColors]::GrayText } }
+ } finally { $form.ResumeLayout($true) }
 }
-function Select-AccountById($identity) {
-    for ($i=0; $i -lt $accounts.Items.Count; $i++) {
-        if ($accounts.Items[$i].id -eq $identity) { $accounts.SelectedIndex=$i; break }
-    }
+function Apply-Language {
+ Resolve-Language
+ foreach ($binding in $script:bindings) { if (-not $binding.Control.IsDisposed) { $binding.Control.Text=L $binding.Key } }
+ $form.Text=L 'Buzz 계정 관리'
+ $keys=@('계정 설정','에이전트 설정','일반 설정')
+ for ($i=0; $i -lt 3; $i++) { $railButtons[$i].AccessibleName=L $keys[$i]; $tooltip.SetToolTip($railButtons[$i],(L $keys[$i])) }
+ Render-Content
 }
-$newProvider.Add_SelectedIndexChanged({ $endpoint.Enabled=($newProvider.Text -eq 'ollama' -and $name.Enabled) })
-$login = Button-At $accountTab '선택 계정 로그인' 360 211 190 {
-    try {
-        $a=$accounts.SelectedItem
-        if (-not $a -or $a.builtin -or $a.provider -eq 'ollama') { throw '추가한 구독 계정을 선택하세요.' }
-        # IDs are generated by the backend; never interpolate user-entered names into PowerShell.
-        if ($a.id -notmatch '^(codex|claude|grok)-[a-f0-9]+$') { throw '계정 ID를 확인하세요.' }
-        $args = '-NoProfile -ExecutionPolicy Bypass -File "' + "$PSScriptRoot\Login.ps1" + '" -AccountId ' + $a.id
-        Start-Process -FilePath 'powershell.exe' -ArgumentList $args
-    } catch { Show-Error $_.Exception.Message }
+$form=New-Object Windows.Forms.Form; $form.Text=L 'Buzz 계정 관리'; $form.Font=New-Object Drawing.Font('Segoe UI',10)
+$form.AutoScaleDimensions=New-Object Drawing.SizeF(96,96); $form.AutoScaleMode='Dpi'
+$form.ClientSize=New-Object Drawing.Size(1180,800); $form.MinimumSize=New-Object Drawing.Size(1080,720); $form.StartPosition='CenterScreen'; $form.KeyPreview=$true
+$tooltip=New-Object Windows.Forms.ToolTip
+$rail=New-Object Windows.Forms.Panel; $rail.Dock='Left'; $rail.Width=72; $rail.BackColor=[Drawing.SystemColors]::Control
+$form.Controls.Add($rail)
+if (Test-Path "$PSScriptRoot\AppIcon.png") {
+ $bitmap=New-Object Drawing.Bitmap("$PSScriptRoot\AppIcon.png"); $iconHandle=$bitmap.GetHicon()
+ try { $form.Icon=[Drawing.Icon]::FromHandle($iconHandle).Clone() } finally { [void][BuzzShell]::DestroyIcon($iconHandle) }
+ $picture=New-Object Windows.Forms.PictureBox; $picture.Image=$bitmap; $picture.SizeMode='Zoom'; $picture.SetBounds(20,16,32,32); $rail.Controls.Add($picture)
 }
-$delete = Button-At $accountTab '선택 계정 삭제' 565 211 170 {
-    try {
-        if (-not $accounts.SelectedItem) { return }
-        if ([System.Windows.Forms.MessageBox]::Show('선택한 계정을 목록에서 삭제할까요?', '계정 삭제', 'YesNo', 'Question') -ne 'Yes') { return }
-        $null = Invoke-Backend 'delete' @{account_id=$accounts.SelectedItem.id}; Refresh-State
-    } catch { Show-Error $_.Exception.Message }
+$railButtons=@(); $captions=@('계정','에이전트','일반'); $sections=@('accounts','agents','general'); $glyphs=@(0xE192,0xE716,0xE713)
+for ($i=0; $i -lt 3; $i++) {
+ $button=Button-At $rail '' 6 (64+62*$i) 60 { $script:section=$this.Tag; Render-Content }; $button.Height=56; $button.Tag=$sections[$i]
+ $button.Font=New-Object Drawing.Font('Segoe UI',9); $button.Padding=New-Object Windows.Forms.Padding(0); $button.UseCompatibleTextRendering=$true; $button.FlatStyle='Flat'; $button.FlatAppearance.BorderSize=0
+ $button.FlatAppearance.MouseOverBackColor=[Drawing.ColorTranslator]::FromHtml('#F2F2F2'); $button.FlatAppearance.MouseDownBackColor=[Drawing.ColorTranslator]::FromHtml('#E6E6E6')
+ $glyph=New-Object Drawing.Bitmap(20,20); $graphics=[Drawing.Graphics]::FromImage($glyph); $font=New-Object Drawing.Font('Segoe MDL2 Assets',16,[Drawing.GraphicsUnit]::Point)
+ try { $graphics.DrawString([string][char]$glyphs[$i],$font,[Drawing.Brushes]::Black,-3,-3) } finally { $font.Dispose(); $graphics.Dispose() }
+ $button.Image=$glyph; $button.TextImageRelation='ImageAboveText'; Bind-Text $button $captions[$i]; $railButtons+=,$button
+ # Button's built-in word wrapping splits short captions despite sufficient width.
+ # Keep native button semantics and paint its caption as one unpadded line.
+ $button.Add_Paint({
+  $top=[int]($this.Height*24.0/56.0)
+  $rect=New-Object Drawing.Rectangle(0,$top,$this.Width,($this.Height-$top))
+  $brush=New-Object Drawing.SolidBrush($this.BackColor)
+  try { $_.Graphics.FillRectangle($brush,$rect) } finally { $brush.Dispose() }
+  $flags=[Windows.Forms.TextFormatFlags]::HorizontalCenter -bor [Windows.Forms.TextFormatFlags]::VerticalCenter -bor [Windows.Forms.TextFormatFlags]::SingleLine -bor [Windows.Forms.TextFormatFlags]::NoPadding
+  [Windows.Forms.TextRenderer]::DrawText($_.Graphics,$this.Text,$this.Font,$rect,$this.ForeColor,$flags)
+ })
 }
-$usage = Button-At $accountTab '사용량 조회' 360 263 160 {
-    try {
-        if (-not $accounts.SelectedItem) { return }
-        $result = Invoke-Backend 'usage' @{account_id=$accounts.SelectedItem.id}
-        $details.Text = $result | ConvertTo-Json -Depth 10
-    } catch { Show-Error $_.Exception.Message }
-}
-$details = New-Object System.Windows.Forms.TextBox
-$details.Location = New-Object System.Drawing.Point(360,313); $details.Size = New-Object System.Drawing.Size(495,195)
-$details.Multiline=$true; $details.ReadOnly=$true; $details.ScrollBars='Vertical'; $accountTab.Controls.Add($details)
-$accounts.Add_SelectedIndexChanged({
-    if ($accounts.SelectedItem) {
-        $a=$accounts.SelectedItem
-        $name.Text=$a.name; $name.Enabled=(-not $a.builtin)
-        $newProvider.SelectedItem=$a.provider; $newProvider.Enabled=$false
-        $endpoint.Text=[string]$a.endpoint
-        $endpoint.Enabled=($a.provider -eq 'ollama' -and -not $a.builtin)
-        $saveAccount.Enabled=(-not $a.builtin); $add.Enabled=$false
-        $ready = if ($a.ready) { '사용 가능' } else { '로그인 또는 서버 연결 필요' }
-        $details.Text = "서비스: $($a.provider)`r`n상태: $ready`r`n계정 경로: $($a.home)"
-        if ($a.provider -eq 'ollama') { $details.AppendText("`r`nOllama 주소: $($a.endpoint)") }
-        if ($a.builtin) { $details.AppendText("`r`n기본 계정은 수정할 수 없습니다. 새 계정 입력을 누르세요.") }
-    }
+$hostPanel=New-Object Windows.Forms.Panel; $hostPanel.Dock='Fill'; $form.Controls.Add($hostPanel); $hostPanel.BringToFront()
+$toolbar=New-Object Windows.Forms.Panel; $toolbar.Dock='Top'; $toolbar.Height=48; $hostPanel.Controls.Add($toolbar)
+$refresh=Button-At $toolbar '' 880 7 180 { try { Refresh-State } catch { Show-Error $_.Exception.Message } }; $refresh.Anchor='Top,Right'; Bind-Text $refresh '새로고침'
+$content=New-Object Windows.Forms.Panel; $content.Dock='Fill'; $hostPanel.Controls.Add($content); $content.BringToFront()
+$accountPage=New-Object Windows.Forms.Panel; $agentPage=New-Object Windows.Forms.Panel; $generalPage=New-Object Windows.Forms.Panel
+foreach ($page in @($accountPage,$agentPage,$generalPage)) { $page.Dock='Fill'; $page.AutoScroll=$true; $page.Padding=New-Object Windows.Forms.Padding(32); $content.Controls.Add($page) }
+$agentPage.Padding=New-Object Windows.Forms.Padding(0)
+$form.Add_KeyDown({
+ if ($_.KeyCode -eq 'F5') { $refresh.PerformClick(); $_.Handled=$true }
+ if ($_.Control -and $_.KeyCode -in @('D1','D2','D3')) { $railButtons[[int]$_.KeyCode-[int][Windows.Forms.Keys]::D1].PerformClick(); $_.Handled=$true }
 })
-Label-At $accountTab '로그인은 별도 창에서 진행합니다. 완료한 뒤 새로고침하세요.' 16 530 800
-$status = New-Object System.Windows.Forms.Label; $status.Location=New-Object System.Drawing.Point(20,639)
-$status.Size=New-Object System.Drawing.Size(670,30); $status.Anchor='Bottom,Left'; $form.Controls.Add($status)
-$refresh = Button-At $form '새로고침' 772 630 160 { try { Refresh-State } catch { Show-Error $_.Exception.Message } }
-$refresh.Anchor='Bottom,Right'
-$form.Add_Shown({ try { Refresh-State } catch { $status.Text='Buzz 설치와 에이전트 설정을 확인하세요.'; Show-Error $_.Exception.Message } })
-[System.Windows.Forms.Application]::Run($form)
+$loginTimer=New-Object Windows.Forms.Timer; $loginTimer.Interval=1000
+$loginTimer.Add_Tick({
+ if ($script:busy -or $script:saving) { return }; $changed=$false
+ foreach ($id in @($script:logins.Keys)) { if ($script:logins[$id].HasExited) { $script:logins[$id].Dispose(); $script:logins.Remove($id); $changed=$true } }
+ if ($changed) { try { Set-Message '로그인 절차가 끝났습니다. 저장된 인증정보를 확인합니다.'; Refresh-State } catch { Show-Error $_.Exception.Message } }
+})
+$loginTimer.Start()
+$form.Add_Shown({ try { Refresh-State } catch { Render-Content; Show-Error $_.Exception.Message } })
+$form.Add_FormClosed({ $loginTimer.Stop(); $loginTimer.Dispose(); $tooltip.Dispose(); foreach ($b in $railButtons) { $b.Image.Dispose() } })
+Apply-Language
+[Windows.Forms.Application]::Run($form)

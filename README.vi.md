@@ -8,6 +8,8 @@
 
 Ứng dụng SwiftUI hỗ trợ Codex, Claude Code, Grok và máy chủ Ollama. Giao diện có tiếng Việt, tiếng Anh và tiếng Hàn. Đây là dự án cộng đồng độc lập, không phải ứng dụng chính thức của Buzz hay các nhà cung cấp AI.
 
+[Bản xem trước Windows](windows/README.md) có Cài đặt tài khoản, Cài đặt tác nhân và Cài đặt chung trên thanh biểu tượng bên trái. Có thể đổi ngôn ngữ ngay, lọc theo nhà cung cấp, xóa/khôi phục tài khoản và chọn tài khoản dự phòng theo thứ tự. Xem phạm vi kiểm chứng trong hướng dẫn Windows.
+
 ## Cài đặt
 
 Bản tải xuống dành cho Apple Silicon, macOS 14 trở lên. Cần cài Buzz Desktop tại `/Applications/Buzz.app`, tạo tác nhân trong Buzz và cài CLI cùng bộ chuyển đổi ACP của dịch vụ:

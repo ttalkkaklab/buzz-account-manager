@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / 'build'
 VERSION = '3.13.12'
 SHA256 = '76f238f606250c87c6beac75dccd35ee99070a13490555936abb6cb64ecce3d0'
+RESOURCE_FILES = ('backend.py', 'windows_support.py', 'Translations.json')
+POWERSHELL_FILES = ('App.ps1', 'Login.ps1', 'Localization.ps1')
 
 
 def main():
@@ -34,9 +36,9 @@ def main():
     subprocess.run(['go', 'build', '-trimpath', '-ldflags=-s -w -H=windowsgui',
                     '-o', str(payload / 'agent-launcher.exe'), str(ROOT / 'windows/launcher.go')], env=env, check=True)
     shutil.copy2(payload / 'agent-launcher.exe', payload / 'Buzz Account Manager.exe')
-    for name in ('backend.py', 'windows_support.py'):
+    for name in RESOURCE_FILES:
         shutil.copy2(ROOT / 'Resources' / name, payload / name)
-    for name in ('App.ps1', 'Login.ps1'):
+    for name in POWERSHELL_FILES:
         # Windows PowerShell 5.1 needs the BOM to recognize Korean source as UTF-8.
         (payload / name).write_text((ROOT / 'windows' / name).read_text(encoding='utf-8'), encoding='utf-8-sig')
     shutil.copy2(ROOT / 'windows/login_console.py', payload / 'login_console.py')
