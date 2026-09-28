@@ -33,7 +33,7 @@ tempfile.tempdir = str(ROOT / 'tmp')
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'Resources'))
 
 def directory_of(descriptor):
-    """Absolute path an open directory descriptor points at."""
+    """Absolute path an open file or directory descriptor points at."""
     try:
         if sys.platform == 'darwin' and fcntl is not None:
             # F_GETPATH only gained a fcntl constant in 3.13; 50 is its value.
@@ -42,21 +42,20 @@ def directory_of(descriptor):
         if sys.platform.startswith('linux'):
             return os.readlink(f'/proc/self/fd/{descriptor}')
     except OSError as error:
-        raise PermissionError(f'Test write against an unreadable dir_fd refused: {error}')
-    # Windows has no dir_fd support at all, so this is an unhandled platform:
-    # refuse rather than guess, because a relative name cannot be checked.
-    raise PermissionError('Test write relative to a dir_fd refused: '
-                          'this platform cannot name the directory')
+        raise PermissionError(f'Test write against an unreadable fd refused: {error}')
+    # Refuse descriptors on platforms where their target cannot be named.
+    raise PermissionError('Test write through an fd refused: '
+                          'this platform cannot name the descriptor')
 
 
 def check_write(path, dir_fd=-1):
     if isinstance(path, int):
-        # fdopen and ftruncate reuse a descriptor whose open was already checked.
-        return
+        # Read-only opens and descriptors inherited before bootstrap were not
+        # checked for writes. Recheck the current target, even for fdopen.
+        path = directory_of(path)
     name = os.fsdecode(path)
     if name == os.devnull:
-        # subprocess.DEVNULL is a sink, not a user file.
-        return
+        raise PermissionError('Test mutation of the null device refused')
     if dir_fd is not None and dir_fd != -1:
         # shutil.rmtree walks POSIX trees with relative names against an open
         # directory. Resolving those against the process working directory
@@ -71,6 +70,9 @@ def check_write(path, dir_fd=-1):
 def _audit(event, args):
     if event == 'open':
         path, mode, flags = args
+        if not isinstance(path, int) and os.fsdecode(path) == os.devnull:
+            # subprocess.DEVNULL needs open access, never remove/chmod/rename.
+            return
         if (mode and any(c in mode for c in 'wax+')) or flags & (
                 os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND):
             check_write(path)

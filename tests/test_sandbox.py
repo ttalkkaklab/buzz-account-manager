@@ -156,6 +156,8 @@ class DeletionGuardTests(GuardTestCase):
         with self.assertRaisesRegex(PermissionError, 'outside sandbox'):
             os.link(Path(__file__).resolve(), source.parent / 'escaped-target')
 
+    @unittest.skipUnless(os.unlink in os.supports_dir_fd,
+                         'removal relative to a directory fd is unsupported')
     def test_removal_through_a_directory_descriptor_cannot_escape(self):
         # shutil.rmtree walks POSIX trees with relative names against an open
         # directory. Resolving those against the working directory would let
@@ -165,7 +167,7 @@ class DeletionGuardTests(GuardTestCase):
             with contextlib.chdir(sandbox.ROOT):
                 expected = re.escape(str(OUTSIDE / 'escaped-dir-fd'))
                 with self.assertRaisesRegex(PermissionError, expected):
-                    os.remove('escaped-dir-fd', dir_fd=descriptor)
+                    os.unlink('escaped-dir-fd', dir_fd=descriptor)
         finally:
             os.close(descriptor)
 
@@ -187,6 +189,86 @@ class DeletionGuardTests(GuardTestCase):
             store = win.store_path(sandbox.ROOT / 'home')
         with self.assertRaisesRegex(PermissionError, 'outside sandbox'):
             store.unlink()
+
+
+class DescriptorGuardTests(GuardTestCase):
+    def assert_external_descriptor_refused(self, operation):
+        # The parent owns the disposable canary; the child's sandbox is a
+        # different root. No checkout or real user file is a mutation target.
+        canary = self.sandboxed_file('fd-canary')
+        before = (canary.read_bytes(), canary.stat().st_mode)
+        code = '''
+import os
+import sys
+target, operation = sys.argv[1:]
+# A writable descriptor can predate the hook (or be inherited).
+fd = os.open(target, os.O_RDWR) if operation == 'truncate' else None
+import sandbox
+if fd is None:
+    # Read-only opens after bootstrap must not grant permission to chmod.
+    fd = os.open(target, os.O_RDONLY)
+try:
+    try:
+        if operation == 'chmod':
+            os.chmod(fd, 0o640)
+        else:
+            os.truncate(fd, 1)
+    except PermissionError:
+        print('descriptor mutation blocked')
+    else:
+        raise AssertionError('external descriptor mutation escaped')
+finally:
+    os.close(fd)
+'''
+        result = subprocess.run([sys.executable, '-B', '-c', code,
+                                 str(canary), operation],
+                                cwd=Path(__file__).parent,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('descriptor mutation blocked', result.stdout)
+        self.assertEqual((canary.read_bytes(), canary.stat().st_mode), before)
+
+    @unittest.skipUnless(os.chmod in os.supports_fd, 'chmod(fd) unsupported')
+    def test_readonly_external_descriptor_cannot_chmod(self):
+        self.assert_external_descriptor_refused('chmod')
+
+    def test_preopened_external_descriptor_cannot_truncate(self):
+        self.assert_external_descriptor_refused('truncate')
+
+    @unittest.skipUnless(sys.platform == 'darwin' or sys.platform.startswith('linux'),
+                         'platform cannot resolve file descriptors')
+    def test_internal_fdopen_and_ftruncate_still_work(self):
+        descriptor, name = tempfile.mkstemp()
+        with os.fdopen(descriptor, 'wb') as output:
+            output.write(b'fixture')
+            output.flush()
+            os.ftruncate(output.fileno(), 3)
+        self.assertEqual(Path(name).read_bytes(), b'fix')
+
+    def test_unresolvable_descriptor_is_refused(self):
+        descriptor, _ = tempfile.mkstemp()
+        os.close(descriptor)
+        with self.assertRaises(PermissionError):
+            sandbox.check_write(descriptor)
+        with patch.object(sys, 'platform', 'unsupported'):
+            with self.assertRaises(PermissionError):
+                sandbox.check_write(descriptor)
+
+    def test_null_device_mutation_events_are_refused(self):
+        # Emit real event shapes without ever mutating the actual device.
+        source = str(self.sandboxed_file('source'))
+        events = [('os.remove', (os.devnull, -1)),
+                  ('os.rmdir', (os.devnull, -1)),
+                  ('os.chmod', (os.devnull, 0o600, -1)),
+                  ('os.truncate', (os.devnull, 0)),
+                  ('os.rename', (source, os.devnull, -1, -1)),
+                  ('os.link', (source, os.devnull, -1, -1)),
+                  ('os.symlink', (source, os.devnull, -1)),
+                  ('_winapi.CopyFile2', (source, os.devnull, 0))]
+        for event, args in events:
+            with self.subTest(event=event):
+                with self.assertRaises(PermissionError):
+                    sys.audit(event, *args)
 
 
 class WindowsCopyGuardTests(GuardTestCase):
