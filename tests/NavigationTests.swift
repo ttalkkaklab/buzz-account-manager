@@ -63,7 +63,9 @@ import Foundation
         }
         let payload = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: sent))) ?? []
         assert(payload == ["C", "A"], "Only the dragged service's ids are sent, got \(payload)")
-        assert(app.error.isEmpty && app.message == "계정 순서를 저장했습니다.", app.error + app.message)
+        // The backend answers in Korean and the model localizes it, so compare against the display language, not a fixed string.
+        assert(app.error.isEmpty && app.message == localizedBackend("계정 순서를 저장했습니다."), app.error + app.message)
+        assert(!app.message.isEmpty, "The save message must survive localization")
         print("Account drag reorder passed")
     }
 }
