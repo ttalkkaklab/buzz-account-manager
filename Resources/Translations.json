@@ -307,6 +307,22 @@
     "en": "Resets {0}",
     "vi": "Đặt lại {0}"
   },
+  "초기화 {0} · {1}": {
+    "en": "Resets {0} · {1}",
+    "vi": "Đặt lại {0} · {1}"
+  },
+  "{0}분 뒤": {
+    "en": "in {0} min",
+    "vi": "sau {0} phút"
+  },
+  "{0}시간 뒤": {
+    "en": "in {0} hr",
+    "vi": "sau {0} giờ"
+  },
+  "{0}일 뒤": {
+    "en": "in {0} days",
+    "vi": "sau {0} ngày"
+  },
   "구독 계정 추가": {
     "en": "Add subscription account",
     "vi": "Thêm tài khoản đăng ký"

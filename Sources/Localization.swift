@@ -71,3 +71,22 @@ func displayDate(_ date: Date, timeOnly: Bool = false) -> String {
     formatter.timeStyle = .short
     return formatter.string(from: date)
 }
+
+func relativeResetTime(_ date: Date, now: Date = Date()) -> String? {
+    let seconds = date.timeIntervalSince(now)
+    guard seconds >= 0 else { return nil }
+    if seconds < 3600 {
+        return L("{0}분 뒤", String(max(1, Int(ceil(seconds / 60)))))
+    }
+    if seconds < 172800 {
+        return L("{0}시간 뒤", String(max(1, Int(ceil(seconds / 3600)))))
+    }
+    return L("{0}일 뒤", String(max(1, Int(ceil(seconds / 86400)))))
+}
+
+func resetTimeDescription(_ date: Date, now: Date = Date()) -> String {
+    guard let relative = relativeResetTime(date, now: now) else {
+        return L("초기화 {0}", String(describing: displayDate(date)))
+    }
+    return L("초기화 {0} · {1}", String(describing: displayDate(date)), relative)
+}

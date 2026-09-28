@@ -34,6 +34,13 @@ class WindowsSupportTests(unittest.TestCase):
                 with self.subTest(key=key, language=language):
                     self.assertTrue(catalog.get(key, {}).get(language, '').strip())
 
+    def test_quota_reset_is_visible_in_summary_and_detail(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'windows/App.ps1').read_text(encoding='utf-8-sig')
+        quota = source[source.index('function Add-Quota'):source.index('function Start-Login')]
+        self.assertIn('Display-Reset $w.resets_at', quota)
+        self.assertNotRegex(quota, r'elseif \(\$script:expanded\[\$identity\]\).*초기화')
+
     def test_stop_buzz_dispatch_is_windows_only_and_mocked(self):
         for platform in ('nt', 'posix'):
             facade = SimpleNamespace(name=platform)
