@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from platform_fixtures import installed_launcher, capture_launch, launch
 
 spec = importlib.util.spec_from_file_location('pin_backend', Path(__file__).resolve().parents[1] / 'Resources/backend.py')
 b = importlib.util.module_from_spec(spec)
@@ -18,6 +19,7 @@ class AccountPinTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        installed_launcher(self, self.temp.name)
         self.manager = b.Manager(self.temp.name)
         self.pk = 'a' * 64
         self.slug = 'agent-' + self.pk
@@ -88,7 +90,7 @@ class AccountPinTests(unittest.TestCase):
         for active, accounts in [('claude', {'claude': 'fixture'}),
                                  ('codex', {}), (None, {})]:
             b.write_json(path, dict(pubkey=self.pk, active_provider=active, account_ids=accounts))
-            with patch.dict(os.environ, {'BUZZ_PRIVATE_KEY': 'fixture', 'BUZZ_ACP_AGENT_COMMAND': 'codex-acp'}, clear=True), patch.object(os, 'execve') as execute:
+            with patch.dict(os.environ, {'BUZZ_PRIVATE_KEY': 'fixture', 'BUZZ_ACP_AGENT_COMMAND': 'codex-acp'}, clear=True), capture_launch(b) as execute:
                 with self.assertRaises(ValueError):
                     self.manager.launch(self.slug, [])
                 execute.assert_not_called()
@@ -129,6 +131,6 @@ class AccountPinTests(unittest.TestCase):
         _, req = self.apply('codex')
         req.update(account_id='default-codex', revision=b.revision(self.manager.store.read_bytes()))
         self.manager.apply(req)
-        with patch.dict(os.environ, {'BUZZ_PRIVATE_KEY': 'fixture', 'BUZZ_ACP_AGENT_COMMAND': 'codex-acp'}, clear=True), patch.object(os, 'execve') as execute:
-            self.manager.launch(self.slug, [])
+        with patch.dict(os.environ, {'BUZZ_PRIVATE_KEY': 'fixture', 'BUZZ_ACP_AGENT_COMMAND': 'codex-acp'}, clear=True), capture_launch(b) as execute:
+            launch(self, self.manager, self.slug, [])
             self.assertEqual(execute.call_args.args[2]['CODEX_HOME'], str(self.manager.home / '.codex'))

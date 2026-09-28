@@ -1,5 +1,6 @@
 import sandbox  # Isolate paths and guard writes before loading application code.
 import datetime
+import os
 import unittest
 from unittest.mock import patch
 import test_backend as fixture
@@ -121,7 +122,7 @@ class FallbackTests(unittest.TestCase):
             state = self.manager.monitor()
         self.assertEqual(len(state['events']), 2)
         self.assertEqual(run.call_count, 1)
-        self.assertEqual(run.call_args.args[0][0], '/usr/bin/osascript')
+        self.assertEqual(run.call_args.args[0][0], 'powershell.exe' if os.name == 'nt' else '/usr/bin/osascript')
 
     def test_stopped_buzz_is_never_started(self):
         path = self.configure()
@@ -145,7 +146,7 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(), before)
         self.assertIn('완료하지 못했습니다', state['events'][0])
         self.assertEqual(run.call_count, 1)
-        self.assertEqual(run.call_args.args[0][0], '/usr/bin/osascript')
+        self.assertEqual(run.call_args.args[0][0], 'powershell.exe' if os.name == 'nt' else '/usr/bin/osascript')
 
     def test_stale_editor_cannot_override_switch(self):
         self.configure()
