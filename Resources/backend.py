@@ -2,6 +2,7 @@
 """Local storage and process boundary for Buzz Account Manager. No model API calls."""
 from __future__ import annotations
 import os
+import copy
 import contextlib
 import datetime
 if os.name == "nt":
@@ -787,6 +788,57 @@ class Manager:
                 win.buzz_binary('buzz-dev-mcp')
         return a
 
+    @staticmethod
+    def isolate_account_definition(records, target):
+        linked = target.get('persona_id')
+        if not linked:
+            return None  # Legacy, unlinked instances have no snapshot source.
+        definitions = [r for r in records if not r.get('pubkey') and r.get('slug') == linked]
+        if len(definitions) != 1:
+            raise ValueError('연결된 에이전트 정의가 없거나 중복되어 저장할 수 없습니다. Buzz에서 정의를 확인하세요.')
+        definition = definitions[0]
+        siblings = [r for r in records if r is not target and r.get('pubkey') and r.get('persona_id') == linked]
+        builtin = definition.get('is_builtin') or linked.startswith('builtin:')
+        if not siblings and not builtin:
+            return definition
+        if definition.get('source_team') or definition.get('team_catalog_source'):
+            raise ValueError('팀에서 관리하는 공통 정의는 자동으로 나눌 수 없습니다. Buzz에서 좌석 전용 정의를 먼저 연결하세요.')
+        # A new NIP-AP coordinate keeps edits to the original definition from
+        # replacing this seat's launcher. Never copy a team slug/catalog origin.
+        dedicated = copy.deepcopy(definition)
+        dedicated_slug = 'account-' + uuid.uuid4().hex
+        if any(r.get('slug') == dedicated_slug or r.get('persona_id') == dedicated_slug for r in records):
+            raise ValueError('좌석 전용 정의의 이름이 겹칩니다. 다시 저장하세요.')
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        dedicated.update(slug=dedicated_slug, pubkey='', persona_id=None, private_key_nsec='',
+                         auth_tag=None, is_builtin=False, is_active=True, shared=False,
+                         source_team=None, source_team_persona_slug=None, catalog_source=None,
+                         team_catalog_source=None, team_id=None, persona_team_dir=None,
+                         persona_name_in_team=None, persona_source_version=None,
+                         start_on_app_launch=False, runtime_pid=None, backend_agent_id=None,
+                         created_at=now, updated_at=now)
+        records.append(dedicated)
+        target['persona_id'] = dedicated_slug
+        target['persona_source_version'] = None
+        return dedicated
+
+    def verify_account_pin(self, pubkey, linked, launcher):
+        error = '저장 뒤 계정 연결이 달라졌습니다. Buzz를 시작하기 전에 설정을 새로고침하고 다시 확인하세요.'
+        try:
+            records = json.loads(self.store.read_bytes())
+            instances = [r for r in records if r.get('pubkey') == pubkey]
+            valid = (len(instances) == 1 and instances[0].get('acp_command') == str(launcher)
+                     and instances[0].get('persona_id') == linked)
+            if linked:
+                definitions = [r for r in records if not r.get('pubkey') and r.get('slug') == linked]
+                valid = (valid and len(definitions) == 1 and definitions[0].get('acp_command') == str(launcher)
+                         and not any(r.get('pubkey') and r.get('pubkey') != pubkey
+                                     and r.get('persona_id') == linked for r in records))
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            raise ValueError(error) from exc
+        if not valid:
+            raise ValueError(error)
+
     def apply(self, req):
         self.validate(req)
         with self.lock():
@@ -801,18 +853,19 @@ class Manager:
             if revision(raw) != req['revision']:
                 raise ValueError('Buzz 설정이 바뀌었습니다. 새로고침 후 다시 선택하세요.')
             records = json.loads(raw)
-            target = next((r for r in records if r.get('pubkey') == req['agent_id']), None)
-            if target is None:
+            instances = [r for r in records if r.get('pubkey') == req['agent_id']]
+            if len(instances) != 1:
                 raise ValueError('에이전트가 더 이상 존재하지 않습니다.')
+            target = instances[0]
             old_profile = self.saved_profile(target)
             expected = req.get('expected_account_id')
             if expected and expected != old_profile.get('account_ids', {}).get(req['provider'], 'default-' + req['provider']) and target.get('runtime') == req['provider']:
                 raise ValueError('자동 전환으로 현재 계정이 바뀌었습니다. 새로고침 후 다시 저장하세요.')
-            linked = target.get('persona_id')
-            targets = [target] + [r for r in records if not r.get('pubkey') and r.get('slug') == linked]
             slug = 'agent-' + target['pubkey']
             if not re.fullmatch(r'agent-[a-f0-9]{64}', slug):
                 raise ValueError('에이전트 공개키 형식을 확인하세요.')
+            definition = self.isolate_account_definition(records, target)
+            targets = [target] + ([definition] if definition is not None else [])
             launcher = self.root / ('launch-' + slug + ('.exe' if os.name == 'nt' else ''))
             provider = req['provider']
             runtime = 'claude' if provider == 'ollama' else provider
@@ -868,6 +921,10 @@ class Manager:
                     else:
                         atomic_bytes(path, old, mode)
                 raise
+            # Verify fresh disk bytes, not the object we just serialized. A
+            # mismatch may be another writer: retain its data and our backups,
+            # rather than rolling that newer store back over the other writer.
+            self.verify_account_pin(target['pubkey'], target.get('persona_id'), launcher)
             return {'message': '설정을 저장했습니다.', 'backup': str(backups)}
 
     @staticmethod
