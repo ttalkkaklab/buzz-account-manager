@@ -443,9 +443,141 @@ class ManagerTests(unittest.TestCase):
                 raise OSError('test failure')
             return original(path, data, mode)
         with patch.object(b, 'atomic_bytes', side_effect=fail_once):
-            with self.assertRaises(OSError):self.manager.apply(self.request())
+            with self.assertRaises(ValueError) as result:self.manager.apply(self.request())
+        self.assertIsInstance(result.exception.__cause__, OSError)
         self.assertEqual(self.manager.store.read_bytes(), raw)
         self.assertFalse((self.manager.root / ('agent-' + self.pk + '.json')).exists())
+
+    def test_rollback_continues_after_restore_failure_and_skips_unwritten_files(self):
+        backend = self.manager.root / 'manager-backend.py'
+        profile = self.manager.root / ('agent-' + self.pk + '.json')
+        backend.write_bytes(b'previous backend')
+        profile.write_bytes(b'{}')
+        raw = self.manager.store.read_bytes()
+        original = b.atomic_bytes
+        store_writes = []
+        failure = OSError('save fixture failure')
+
+        def fail_save_and_one_restore(path, data, mode=0o600):
+            if path == self.manager.store:
+                store_writes.append(path)
+                raise failure
+            if path == profile and data == b'{}':
+                raise OSError('restore fixture failure')
+            return original(path, data, mode)
+
+        with patch.object(b, 'atomic_bytes', side_effect=fail_save_and_one_restore):
+            with self.assertRaisesRegex(ValueError, '일부 파일을 복원하지 못했습니다') as result:
+                self.manager.apply(self.request())
+        self.assertIs(result.exception.__cause__, failure)
+        self.assertIn('복원 실패: ' + profile.name, str(result.exception))
+        self.assertIn('백업: ' + str(self.manager.root / 'backups'), str(result.exception))
+        self.assertNotIn('save fixture failure', str(result.exception))
+        self.assertEqual(store_writes, [self.manager.store])
+        self.assertEqual(self.manager.store.read_bytes(), raw)
+        self.assertEqual(backend.read_bytes(), b'previous backend')
+        suffix = '.exe' if os.name == 'nt' else ''
+        self.assertFalse((self.manager.root / ('launch-agent-' + self.pk + suffix)).exists())
+        self.assertNotEqual(profile.read_bytes(), b'{}')
+        backups = list((self.manager.root / 'backups').iterdir())
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / ('1-' + profile.name)).read_bytes(), b'{}')
+
+    @contextlib.contextmanager
+    def locked_windows_launcher(self, path):
+        import ctypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                                      ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+        kernel.CreateFileW.restype = ctypes.c_void_p
+        kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+        kernel.CloseHandle.restype = ctypes.c_int
+        # Read sharing only: replacing this file must fail on native Windows.
+        handle = kernel.CreateFileW(str(path), 0x80000000, 1, None, 3, 0, None)
+        if handle == ctypes.c_void_p(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            yield
+        finally:
+            kernel.CloseHandle(handle)
+
+    @unittest.skipUnless(os.name == 'nt', 'native Windows sharing semantics')
+    def test_unchanged_locked_windows_launcher_can_save(self):
+        self.manager.apply(self.request())
+        launcher = self.manager.root / ('launch-agent-' + self.pk + '.exe')
+        before = launcher.read_bytes()
+        with self.locked_windows_launcher(launcher):
+            req = self.request()
+            req['effort'] = 'medium'
+            self.manager.apply(req)
+        self.assertEqual(launcher.read_bytes(), before)
+        self.assertEqual(b.read_json(self.manager.store)[1]['effort_level'], 'medium')
+
+    @unittest.skipUnless(os.name == 'nt', 'native Windows sharing semantics')
+    def test_changed_locked_windows_launcher_fails_before_any_payload_write(self):
+        self.manager.apply(self.request())
+        launcher = self.manager.root / ('launch-agent-' + self.pk + '.exe')
+        backend = self.manager.root / 'manager-backend.py'
+        backend.write_bytes(b'previous backend')
+        originals = {p: p.read_bytes() for p in self.manager.root.iterdir() if p.is_file()}
+        raw = self.manager.store.read_bytes()
+        with self.locked_windows_launcher(launcher), \
+             patch.object(b.win, 'launcher_bytes', return_value=b'MZ-updated-fixture'), \
+             patch.object(b, 'atomic_bytes', wraps=b.atomic_bytes) as writes:
+            req = self.request()
+            req['effort'] = 'medium'
+            with self.assertRaisesRegex(ValueError, '파일이 사용 중이거나 쓰기 권한') as result:
+                self.manager.apply(req)
+            writes.assert_not_called()
+        self.assertIsInstance(result.exception.__cause__, PermissionError)
+        self.assertIn(result.exception.__cause__.winerror, (5, 32, 33))
+        self.assertEqual(self.manager.store.read_bytes(), raw)
+        for path, data in originals.items():
+            self.assertEqual(path.read_bytes(), data, path.name)
+
+    @unittest.skipUnless(os.name == 'nt', 'native Windows executable image locking')
+    def test_running_windows_launcher_image_unchanged_save_and_changed_preflight(self):
+        import subprocess
+        executable = Path(os.environ['SystemRoot']) / 'System32/cmd.exe'
+        image = executable.read_bytes()
+        with patch.object(b.win, 'launcher_bytes', return_value=image):
+            self.manager.apply(self.request())
+            launcher = self.manager.root / ('launch-agent-' + self.pk + '.exe')
+            # This fixture only waits on its private stdin. It never invokes Buzz.
+            process = subprocess.Popen([str(launcher), '/d', '/q', '/c', 'set /p fixture='],
+                                       stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                       stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+            try:
+                self.assertIsNone(process.poll())
+                req = self.request(); req['effort'] = 'medium'
+                self.manager.apply(req)
+                self.assertEqual(b.read_json(self.manager.store)[1]['effort_level'], 'medium')
+                raw = self.manager.store.read_bytes()
+                with patch.object(b.win, 'launcher_bytes', return_value=b'MZ-new-image'), \
+                     patch.object(b, 'atomic_bytes', wraps=b.atomic_bytes) as writes:
+                    with self.assertRaisesRegex(ValueError, '파일이 사용 중이거나 쓰기 권한') as result:
+                        self.manager.apply(self.request())
+                    writes.assert_not_called()
+                self.assertIsInstance(result.exception.__cause__, PermissionError)
+                self.assertIn('아직 종료되지 않은 에이전트: 1', str(result.exception))
+                self.assertIn(launcher.name, str(result.exception))
+                self.assertEqual(self.manager.store.read_bytes(), raw)
+                self.assertEqual(launcher.read_bytes(), image)
+                self.assertIsNone(process.poll())
+            finally:
+                process.terminate()
+                process.wait(timeout=10)
+                process.stdin.close()
+
+    def test_identical_payload_files_are_not_replaced(self):
+        self.manager.apply(self.request())
+        with patch.object(b, 'atomic_bytes', wraps=b.atomic_bytes) as writes:
+            self.manager.apply(self.request())
+        # Backup metadata can be written, but no managed payload is replaced.
+        payloads = [call.args[0] for call in writes.call_args_list
+                    if self.manager.root / 'backups' not in call.args[0].parents]
+        self.assertEqual(payloads, [])
+
     def test_provider_switch_does_not_add_auto_approval(self):
         req = self.request();req.update(provider='grok', account_id='default-grok', model='grok-test')
         with patch.object(b.Manager, 'account_ready', return_value=True):self.manager.apply(req)

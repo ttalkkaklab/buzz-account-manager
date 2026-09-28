@@ -916,8 +916,6 @@ class Manager:
                 profile.setdefault('fallback_ids', {})[provider] = self.fallback_ids(req)
                 profile.setdefault('auto_fallback', {})[provider] = req.get('auto_fallback') in (True, 'true')
             backups = self.root / 'backups' / (datetime.datetime.now().strftime('%Y%m%d-%H%M%S-') + uuid.uuid4().hex[:6])
-            backups.mkdir(parents=True, mode=0o700)
-            backups.parent.chmod(0o700)
             backend_copy = Path(__file__).read_bytes()
             script = ('#!/bin/sh\nexec ' + shlex.join([LAUNCH_PYTHON, str(self.root / 'manager-backend.py'),
                                                     'launch', slug]) + ' "$@"\n').encode()
@@ -930,28 +928,75 @@ class Manager:
                            for p, data, mode in updates]
                 updates += [(self.root / 'windows_support.py', Path(win.__file__).read_bytes(), 0o600),
                             (self.root / 'installation.txt', str(win.installation_dir()).encode('utf-8'), 0o600)]
-            originals = []
-            for i, (path, _, _) in enumerate(updates):
-                old = path.read_bytes() if path.exists() else None
-                originals.append((path, old, path.stat().st_mode & 0o777 if path.exists() else 0o600))
-                if old is not None:
-                    atomic_bytes(backups / (str(i) + '-' + path.name), old)
-            write_json(backups / 'manifest.json', {'files': [dict(path=str(p), existed=b is not None) for p,b,_ in originals]})
+            # Avoid replacing identical bytes, particularly Windows executable images.
+            changed, originals = [], []
+            for path, data, mode in updates:
+                try:
+                    old = path.read_bytes() if path.exists() else None
+                    old_mode = path.stat().st_mode & 0o777 if old is not None else 0o600
+                except OSError as error:
+                    raise ValueError(self.save_error(error, path, None)) from error
+                if old != data:
+                    changed.append((path, data, mode))
+                    originals.append((path, old, old_mode))
+            updates = changed
+            if os.name == 'nt' and launcher.exists() and any(p == launcher for p, _, _ in updates):
+                try:
+                    win.check_launcher_replaceable(launcher)
+                except Exception as error:
+                    raise ValueError(self.save_error(error, launcher, None)) from error
+            backup_target = backups
             try:
-                for path, data, mode in updates:
+                backups.mkdir(parents=True, mode=0o700)
+                backups.parent.chmod(0o700)
+                for i, (path, old, _) in enumerate(originals):
+                    if old is not None:
+                        backup_target = backups / (str(i) + '-' + path.name)
+                        atomic_bytes(backup_target, old)
+                backup_target = backups / 'manifest.json'
+                write_json(backup_target, {'files': [dict(path=str(p), existed=b is not None) for p,b,_ in originals]})
+            except OSError as error:
+                raise ValueError(self.save_error(error, backup_target, backups)) from error
+            applied = []
+            try:
+                for update, original in zip(updates, originals):
+                    path, data, mode = update
                     atomic_bytes(path, data, mode)
-            except Exception:
-                for path, old, mode in reversed(originals):
-                    if old is None:
-                        path.unlink(missing_ok=True)
-                    else:
-                        atomic_bytes(path, old, mode)
-                raise
+                    applied.append(original)
+            except Exception as error:
+                restore_errors = []
+                for path, old, mode in reversed(applied):
+                    try:
+                        if old is None:
+                            path.unlink(missing_ok=True)
+                        else:
+                            atomic_bytes(path, old, mode)
+                    except Exception:
+                        restore_errors.append(path.name)
+                raise ValueError(self.save_error(error, update[0], backups, restore_errors, restored=True)) from error
             # Verify fresh disk bytes, not the object we just serialized. A
             # mismatch may be another writer: retain its data and our backups,
             # rather than rolling that newer store back over the other writer.
             self.verify_account_pin(target['pubkey'], target.get('persona_id'), launcher)
             return {'message': '설정을 저장했습니다.', 'backup': str(backups)}
+
+    @staticmethod
+    def save_error(error, path, backups, restore_errors=(), restored=False):
+        # Never include raw exception strings: they may contain configuration data.
+        if isinstance(error, PermissionError) or getattr(error, 'winerror', None) in (5, 32, 33):
+            message = '파일이 사용 중이거나 쓰기 권한이 없어 저장하지 못했습니다. Buzz와 에이전트 실행기를 종료하고 다시 시도하세요.'
+        else:
+            message = '설정을 저장하지 못했습니다.'
+        if getattr(error, 'launcher_count', 0):
+            message += '\n아직 종료되지 않은 에이전트: ' + str(error.launcher_count)
+        if restore_errors:
+            message += '\n일부 파일을 복원하지 못했습니다. Buzz를 시작하지 말고 백업을 확인하세요.'
+            message += '\n복원 실패: ' + ', '.join(restore_errors)
+        elif restored:
+            message += '\n변경한 파일을 복원했습니다.'
+        else:
+            message += '\n파일을 변경하지 않았습니다.'
+        return message + '\n파일: ' + path.name + ('\n백업: ' + str(backups) if backups is not None else '')
 
     @staticmethod
     def fallback_ids(req):
@@ -1193,6 +1238,8 @@ def main():
         result = manager.monitor()
     elif action == 'stop-buzz':
         result = manager.stop_buzz()
+    elif action == 'shutdown-status' and os.name == 'nt':
+        result = dict(buzz_running=manager.buzz_running(), launcher_count=len(win.launcher_processes(manager.root)))
     elif action == 'status':
         result = manager.snapshot()
     elif action == 'usage':

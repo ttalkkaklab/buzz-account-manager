@@ -430,10 +430,11 @@ function Save-Agent {
   $null=Invoke-Backend 'validate' $request
   $saveMessage.Text=L 'Buzz를 정상 종료하는 중…'
   $null=Invoke-Backend 'stop-buzz'
-  $deadline=[DateTime]::UtcNow.AddSeconds(10)
+  $deadline=[DateTime]::UtcNow.AddSeconds(30)
   do {
-   $running=(Invoke-Backend 'status').buzz_running
-   if (-not $running) { break }
+   $shutdown=Invoke-Backend 'shutdown-status'
+   $running=$shutdown.buzz_running
+   if (-not $running -and $shutdown.launcher_count -eq 0) { break }
    $pause=[Diagnostics.Stopwatch]::StartNew()
    while ($pause.ElapsedMilliseconds -lt 200) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 20 }
   } while ([DateTime]::UtcNow -lt $deadline)
