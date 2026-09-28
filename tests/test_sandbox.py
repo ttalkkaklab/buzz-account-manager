@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -268,6 +269,62 @@ finally:
         finally:
             os.close(descriptor)
 
+
+    def assert_special_descriptor_refused(self, kind):
+        folder = Path(tempfile.mkdtemp())
+        target = folder / 'special'
+        if kind == 'fifo':
+            os.mkfifo(target, 0o600)
+        else:
+            target.symlink_to(self.sandboxed_file('link-target'))
+        before = target.lstat().st_mode
+        code = """
+import os, sys
+import sandbox
+path, kind = sys.argv[1:]
+flags = os.O_RDONLY | (os.O_NONBLOCK if kind == 'fifo' else os.O_SYMLINK)
+fd = os.open(path, flags)
+original_root = sandbox.ROOT
+if kind == 'symlink':
+    # The link itself must be checked even when its referent is allowed.
+    from pathlib import Path
+    sandbox.ROOT = Path(path).resolve().parent
+try:
+    try:
+        os.chmod(fd, 0o700)
+    except PermissionError as error:
+        assert 'outside sandbox' in str(error), str(error)
+    else:
+        raise AssertionError('external special descriptor mutation escaped')
+finally:
+    sandbox.ROOT = original_root
+    os.close(fd)
+"""
+        result = subprocess.run([sys.executable, '-B', '-c', code, str(target), kind],
+                                cwd=Path(__file__).parent, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(target.lstat().st_mode, before)
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo') and os.chmod in os.supports_fd,
+                         'named FIFO and chmod(fd) required')
+    def test_external_fifo_descriptor_cannot_chmod(self):
+        self.assert_special_descriptor_refused('fifo')
+
+    @unittest.skipUnless(hasattr(os, 'O_SYMLINK') and os.chmod in os.supports_fd,
+                         'macOS O_SYMLINK and chmod(fd) required')
+    def test_external_symlink_descriptor_cannot_chmod(self):
+        self.assert_special_descriptor_refused('symlink')
+
+    def test_linux_proc_labels_are_not_filesystem_paths(self):
+        # Exercise the Linux resolver on macOS too; this is not a Linux runtime run.
+        with patch.object(sys, 'platform', 'linux'):
+            for label in ('pipe:[12345]', 'socket:[12345]', 'anon_inode:[eventpoll]'):
+                with self.subTest(label=label), patch.object(os, 'readlink', return_value=label):
+                    with self.assertRaises(PermissionError):
+                        sandbox.directory_of(123)
+            with patch.object(os, 'readlink', return_value='/tmp/named-fifo'):
+                self.assertEqual(sandbox.directory_of(123), '/tmp/named-fifo')
+
     def test_null_device_mutation_events_are_refused(self):
         # Emit real event shapes without ever mutating the actual device.
         source = str(self.sandboxed_file('source'))
@@ -283,6 +340,65 @@ finally:
             with self.subTest(event=event):
                 with self.assertRaises(PermissionError):
                     sys.audit(event, *args)
+
+
+
+class SpecialCreationGuardTests(GuardTestCase):
+    def assert_creation_refused(self, api):
+        # Parent-owned temporary folder is outside the child sandbox, so a
+        # mutant can only create disposable nodes, never checkout/user files.
+        with tempfile.TemporaryDirectory() as folder:
+            code = """
+import os, stat, sys
+import sandbox
+folder, api = sys.argv[1:]
+fn = getattr(os, api)
+mode = 0o600 if api == 'mkfifo' else stat.S_IFIFO | 0o600
+fd = os.open(folder, os.O_RDONLY)
+try:
+    for relative in (False, True):
+        name = 'escaped-' + str(relative)
+        path = name if relative else os.path.join(folder, name)
+        try:
+            fn(path, mode, dir_fd=fd if relative else None)
+        except PermissionError as error:
+            assert 'outside sandbox' in str(error), str(error)
+        else:
+            raise AssertionError(api + ' creation escaped')
+finally:
+    os.close(fd)
+"""
+            result = subprocess.run([sys.executable, '-B', '-c', code, folder, api],
+                                    cwd=Path(__file__).parent, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(list(Path(folder).iterdir()), [])
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'os.mkfifo unavailable')
+    def test_external_mkfifo_is_refused(self):
+        self.assert_creation_refused('mkfifo')
+
+    @unittest.skipUnless(hasattr(os, 'mknod') and sys.platform in ('darwin', 'linux'),
+                         'POSIX mknod(S_IFIFO) required')
+    def test_external_mknod_is_refused(self):
+        self.assert_creation_refused('mknod')
+
+    def test_internal_special_creation_still_works(self):
+        available = [name for name in ('mkfifo', 'mknod') if hasattr(os, name)]
+        if not available:
+            self.skipTest('neither special creation API is available')
+        with tempfile.TemporaryDirectory() as folder:
+            fd = os.open(folder, os.O_RDONLY)
+            try:
+                for api in available:
+                    for relative in (False, True):
+                        with self.subTest(api=api, relative=relative):
+                            name = api + str(relative)
+                            path = name if relative else os.path.join(folder, name)
+                            mode = 0o600 if api == 'mkfifo' else stat.S_IFIFO | 0o600
+                            getattr(os, api)(path, mode, dir_fd=fd if relative else None)
+                            self.assertTrue(stat.S_ISFIFO(os.stat(Path(folder) / name).st_mode))
+            finally:
+                os.close(fd)
 
 
 class WindowsCopyGuardTests(GuardTestCase):
