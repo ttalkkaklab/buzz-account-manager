@@ -127,6 +127,45 @@ ConvertTo-Json -InputObject $rows -Compress
         self.assertTrue(rows[6])                                      # auto-switch toggle counts
         self.assertTrue(rows[7])                                      # fallback order counts
 
+    def test_new_account_selection_survives_login_rerenders(self):
+        """§2.8.4: Start-Login and the login timer both re-render; the pick must stay."""
+        shell = shutil.which('pwsh') or shutil.which('powershell') or shutil.which('powershell.exe')
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'windows/App.ps1').read_text(encoding='utf-8-sig')
+        # The pick is dropped on purpose in exactly three places, never on render.
+        self.assertEqual(source.count('Clear-PendingAccount'), 4)   # definition plus three call sites
+        for caller in ('$script:agentId=$this.SelectedItems[0].Tag; Clear-PendingAccount',
+                       'Clear-PendingAccount; Render-Content',
+                       "Clear-PendingAccount; Set-Message '{0} 설정을 저장했습니다."):
+            self.assertIn(caller, source)
+        if not shell:
+            self.skipTest('no PowerShell available to execute App.ps1 logic')
+        logic = source[source.index('function Set-PendingAccount'):source.index('function Agent-Baseline')]
+        harness = """$ErrorActionPreference='Stop'
+$script:pendingAccount=''; $script:pendingAgent=''
+""" + logic + """
+$accounts=@([pscustomobject]@{id='old1'},[pscustomobject]@{id='old2'},[pscustomobject]@{id='new1'})
+$rows=@()
+Set-PendingAccount 'agent1' 'new1'
+$rows+=Resolve-Selection 'agent1' 'old1' $accounts   # first render after the dialog
+$rows+=Resolve-Selection 'agent1' 'old1' $accounts   # Start-Login re-render
+$rows+=Resolve-Selection 'agent1' 'old1' $accounts   # login-timer Refresh-State
+$rows+=Resolve-Selection 'agent2' 'old2' $accounts   # another agent keeps its own account
+Set-PendingAccount 'agent1' 'ghost'
+$rows+=Resolve-Selection 'agent1' 'old1' $accounts   # a deleted account falls back
+Set-PendingAccount 'agent1' 'new1'
+Clear-PendingAccount
+$rows+=Resolve-Selection 'agent1' 'old1' $accounts   # after save or discard
+ConvertTo-Json -InputObject $rows -Compress
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / 'pending.ps1'
+            script.write_text(harness, encoding='utf-8-sig')
+            result = subprocess.run([shell, '-NoProfile', '-File', str(script)],
+                                    capture_output=True, text=True, encoding='utf-8', check=True)
+            rows = json.loads(result.stdout.lstrip('\ufeff'))
+        self.assertEqual(rows, ['new1', 'new1', 'new1', 'old2', 'old1', 'old1'])
+
     def test_windows_payload_includes_shared_catalog(self):
         root = Path(__file__).resolve().parents[1]
         spec = importlib.util.spec_from_file_location('windows_build', root / 'windows/build.py')

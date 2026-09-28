@@ -19,7 +19,7 @@ $env:PYTHONUTF8='1'; $env:PYTHONIOENCODING='utf-8'
 $script:state=$null; $script:busy=$false; $script:loading=$false; $script:saving=$false
 $script:section='accounts'; $script:filter='all'; $script:agentId=''; $script:message=''; $script:messageValues=@()
 $script:usageCache=@{}; $script:expanded=@{}; $script:logins=@{}; $script:hiddenOpen=$false
-$script:editorReady=$false; $script:baseline=$null; $script:pendingAccount=''; $script:columns=$false; $script:connectionLost=$false
+$script:editorReady=$false; $script:baseline=$null; $script:pendingAccount=''; $script:pendingAgent=''; $script:columns=$false; $script:connectionLost=$false
 $script:scale=1.0
 $script:bindings=New-Object System.Collections.Generic.List[object]
 $script:selection='system'; $settingsKey='HKCU:\Software\Buzz Account Manager'
@@ -224,7 +224,7 @@ function Show-AccountDialog($account=$null) {
  try {
   if ($dialog.ShowDialog($form) -eq 'OK') {
    $created=$dialog.Tag
-   if (-not $edit -and $script:section -eq 'agents') { $script:pendingAccount=[string]$created.id }
+   if (-not $edit -and $script:section -eq 'agents') { Set-PendingAccount $script:agentId ([string]$created.id) }
    Refresh-State
    if (-not $edit -and -not (Is-Server $created)) { Start-Login $created }
   }
@@ -317,6 +317,15 @@ function Fill-Efforts {
  $effort.SelectedIndex=0; if ($previous -and $effort.Items.Contains($previous)) { $effort.SelectedItem=$previous }
  Update-Save
 }
+# A account created from the agent screen stays selected across the re-renders
+# that Start-Login and the login-completion timer trigger. Only switching agent,
+# saving or discarding drops it.
+function Set-PendingAccount([string]$agentId,[string]$accountId) { $script:pendingAgent=$agentId; $script:pendingAccount=$accountId }
+function Clear-PendingAccount { $script:pendingAgent=''; $script:pendingAccount='' }
+function Resolve-Selection([string]$agentId,[string]$savedAccountId,$accounts) {
+ if ($script:pendingAccount -and $script:pendingAgent -eq $agentId -and @($accounts | Where-Object id -eq $script:pendingAccount).Count) { return $script:pendingAccount }
+ return $savedAccountId
+}
 function Agent-Baseline($a) {
  return @{provider=[string]$a.provider;account=[string]$a.account_id;model=([string]$a.model).Trim();effort=[string]$a.effort;
   fallbacks=(@(@($a.fallback_ids) | Where-Object { $_ }) -join ',');auto=[bool]$a.auto_fallback}
@@ -399,7 +408,7 @@ function Save-Agent {
   $saveMessage.Text=L '설정을 백업하고 저장하는 중…'
   if ($request.auto_fallback) { $null=Invoke-Backend 'install-monitor' }
   $null=Invoke-Backend 'apply' $request
-  Set-Message '{0} 설정을 저장했습니다. Buzz는 직접 시작하세요.' @($a.name); Refresh-State
+  Clear-PendingAccount; Set-Message '{0} 설정을 저장했습니다. Buzz는 직접 시작하세요.' @($a.name); Refresh-State
  } catch { Show-Error $_.Exception.Message }
  finally { $script:saving=$false; $form.Enabled=$true; $form.UseWaitCursor=$false; Update-Save }
 }
@@ -470,7 +479,7 @@ function Place-SaveBar([double]$unit=$script:scale) {
 # Rebuilding the editor seeds every control from the saved agent again.
 function Discard-Changes {
  if (-not $script:editorReady -or $script:busy -or $script:saving) { return }
- Render-Content
+ Clear-PendingAccount; Render-Content
 }
 # Detail width, not window width: the rail and the agent list make the two differ.
 function Layout-Editor([double]$unit=$script:scale) {
@@ -516,7 +525,7 @@ function Render-Agents {
  }
  $list.Add_SelectedIndexChanged({
   if ($this.SelectedItems.Count -and $this.SelectedItems[0].Tag -ne $script:agentId) {
-   $script:agentId=$this.SelectedItems[0].Tag
+   $script:agentId=$this.SelectedItems[0].Tag; Clear-PendingAccount
    [void]$this.BeginInvoke([Action]{ if (-not $form.IsDisposed) { Render-Content } })
   }
  })
@@ -550,8 +559,10 @@ function Render-Agents {
  $script:saveMessage=Label-At $bar '' 24 16 400 30
  $script:saveMessage.Anchor='Top,Left,Right'; $script:saveMessage.AutoEllipsis=$true
  $bar.Add_Resize({ Place-SaveBar })
- $provider.SelectedItem=$a.provider; Fill-Accounts
- for ($i=0; $i -lt $assigned.Items.Count; $i++) { if ($assigned.Items[$i].id -eq $a.account_id) { $assigned.SelectedIndex=$i } }
+ $target=Resolve-Selection $a.id ([string]$a.account_id) $script:state.accounts
+ $selected=@($script:state.accounts | Where-Object id -eq $target) | Select-Object -First 1
+ $provider.SelectedItem=$(if ($selected) { [string]$selected.provider } else { [string]$a.provider }); Fill-Accounts
+ for ($i=0; $i -lt $assigned.Items.Count; $i++) { if ($assigned.Items[$i].id -eq $target) { $assigned.SelectedIndex=$i } }
  Fill-Models
  if ($model.Items.Contains([string]$a.model)) { $model.SelectedItem=[string]$a.model } elseif ($provider.SelectedItem -ne 'ollama') { $manual.Checked=$true; $model.DropDownStyle='DropDown'; $model.Text=[string]$a.model }
  Fill-Efforts; if ($effort.Items.Contains([string]$a.effort)) { $effort.SelectedItem=[string]$a.effort }
@@ -564,15 +575,6 @@ function Render-Agents {
  $effort.Add_SelectedIndexChanged({ Update-Save })
  $script:baseline=Agent-Baseline $a
  $script:editorReady=$true
- # An account created from this screen belongs to the agent being edited.
- if ($script:pendingAccount) {
-  $added=@($script:state.accounts | Where-Object id -eq $script:pendingAccount) | Select-Object -First 1
-  $script:pendingAccount=''
-  if ($added) {
-   if ($provider.SelectedItem -ne $added.provider) { $provider.SelectedItem=$added.provider }
-   for ($i=0; $i -lt $assigned.Items.Count; $i++) { if ($assigned.Items[$i].id -eq $added.id) { $assigned.SelectedIndex=$i } }
-  }
- }
  $editor.Add_Resize({ Layout-Editor })
  Layout-Editor 1.0; Place-SaveBar 1.0; Update-Save
 }

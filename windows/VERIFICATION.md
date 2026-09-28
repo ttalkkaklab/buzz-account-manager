@@ -80,10 +80,10 @@ The latter two failures compare mocked `subprocess.run` arguments (`'powershell.
 | `변경 취소` | `resetChanges` | `Discard-Changes`(상세를 저장값으로 다시 그림) | 정적 검사 PASS. 실기 미검증 |
 | Ctrl+S | `keyboardShortcut("s")` | `Form.KeyDown` | 정적 검사 PASS. 실기 미검증 |
 | 컨트롤 단계 bar 32 / inline 26 / compact 22 | `Controls.swift` `ControlTier` | `Button-At -Tier` · `Combo-At` | 정적 검사 PASS. 눈으로는 실기 미검증 |
-| 상세에서 만든 계정을 02 에 선택 | `createdAccountSelection` | `$script:pendingAccount` | 실기 미검증 |
+| 상세에서 만든 계정을 02 에 선택 | `createdAccountSelection` | `Set-PendingAccount`·`Resolve-Selection`(에이전트 id 와 함께 보관) | pwsh 로 `Resolve-Selection` 실행해 PASS — 첫 렌더·`Start-Login` 재렌더·로그인 종료 타이머 재렌더 세 번 모두 새 계정을 돌려주고, 다른 에이전트·삭제된 계정·저장/변경취소 뒤에는 저장값으로 돌아갑니다(반증 확인: 한 번 쓰고 비우면 두 번째 렌더에서 실패). 실기 미검증 |
 
 - 파싱 검사: `pwsh 7.5.0`(macOS, 임시 설치) `Parser::ParseFile` → `App.ps1`·`Login.ps1`·`Localization.ps1` 오류 0건.
 - 자동 테스트: `python3 -m unittest discover -s tests -v` → 100 tests, OK(skip 1 = Windows 전용 런타임 검사).
+- 새 계정 선택은 **에이전트를 바꾸거나 저장하거나 변경 취소를 누를 때만** 풀립니다(특급개발자(푼) 리뷰 `56cd6b02`). 로그인 콘솔이 뜨는 동안·끝난 뒤의 재렌더에서도 유지됩니다.
 - 알려진 한계: 창 크기를 바꿀 때 카드와 그 안의 컨트롤 폭은 따라가지만 **잔량 뷰 박스 폭은 다음 새로고침에 맞춰집니다**(절대 좌표로 그려 폭 변경에 반응하지 않습니다). 맥 판에 있는 「계정을 만든 직후 잔량 미리 조회」는 넣지 않았습니다 — 서버형 계정에서 불필요한 백엔드 호출이 늘어서, 저장 뒤 조회로 남겼습니다.
 - macOS 화면은 이 변경에서 건드리지 않았습니다(`Sources/` 무변경).
-
