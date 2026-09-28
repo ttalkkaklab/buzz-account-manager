@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import plistlib
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -43,6 +44,11 @@ def installed_version(home):
     return plistlib.loads(info.read_bytes())['CFBundleVersion']
 
 
+HAS_MAC_INSTALL_TOOLS = sys.platform == 'darwin' and all(
+    os.access(path, os.X_OK) for path in ('/usr/bin/codesign', '/usr/bin/ditto', '/usr/bin/python3'))
+
+
+@unittest.skipUnless(HAS_MAC_INSTALL_TOOLS, 'requires macOS codesign, ditto and /usr/bin/python3')
 class InstallAppTests(unittest.TestCase):
     def run_installer(self, home, archive, force=False, python_path=None):
         environ = os.environ.copy()

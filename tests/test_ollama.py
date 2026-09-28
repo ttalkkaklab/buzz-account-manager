@@ -6,10 +6,12 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from test_backend import b
+from platform_fixtures import installed_launcher, capture_launch, launch
 
 class OllamaTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
+        installed_launcher(self, self.temp.name)
         self.manager = b.Manager(self.temp.name)
         self.pk = 'a' * 64
         b.write_json(self.manager.store, [dict(name='Local test', pubkey=self.pk, runtime='codex', model='old', is_active=True)])
@@ -33,8 +35,8 @@ class OllamaTests(unittest.TestCase):
         self.assertEqual(self.manager.snapshot()['agents'][0]['provider'],'ollama')
         env={'BUZZ_PRIVATE_KEY':'identity','BUZZ_ACP_AGENT_COMMAND':record['agent_command'],'BUZZ_ACP_MODEL':'local:8b',
              'ANTHROPIC_AUTH_TOKEN':'real-secret','ANTHROPIC_CUSTOM_HEADERS':'secret-header','CLAUDE_CODE_OAUTH_TOKEN':'oauth-secret'}
-        with patch.dict(os.environ,env,clear=True),patch.object(b.os,'execve') as run:
-            self.manager.launch('agent-'+self.pk,[])
+        with patch.dict(os.environ,env,clear=True),capture_launch(b) as run:
+            launch(self, self.manager, 'agent-'+self.pk,[])
         actual=run.call_args.args[2]
         self.assertEqual(actual['ANTHROPIC_AUTH_TOKEN'],'ollama')
         self.assertEqual(actual['ANTHROPIC_API_KEY'],'')
@@ -46,16 +48,18 @@ class OllamaTests(unittest.TestCase):
     def test_missing_model_environment_uses_saved_ollama_model(self):
         with patch.object(self.manager, 'buzz_running', return_value=False): self.manager.apply(self.req())
         env={'BUZZ_PRIVATE_KEY':'identity','BUZZ_ACP_AGENT_COMMAND':'/test/bin/claude-agent-acp'}
-        with patch.dict(os.environ,env,clear=True),patch.object(b.os,'execve') as run:
-            self.manager.launch('agent-'+self.pk,[])
+        with patch.dict(os.environ,env,clear=True),capture_launch(b) as run:
+            launch(self, self.manager, 'agent-'+self.pk,[])
         actual=run.call_args.args[2]
         self.assertEqual(actual['BUZZ_ACP_MODEL'],'local:8b')
-        self.assertEqual(actual['BUZZ_ACP_MCP_COMMAND'],'/Applications/Buzz.app/Contents/MacOS/buzz-dev-mcp')
+        expected_mcp = (str(b.win.buzz_binary('buzz-dev-mcp')) if os.name == 'nt'
+                        else '/Applications/Buzz.app/Contents/MacOS/buzz-dev-mcp')
+        self.assertEqual(actual['BUZZ_ACP_MCP_COMMAND'], expected_mcp)
         self.assertEqual(actual['ENABLE_TOOL_SEARCH'],'false')
         self.assertEqual(actual['ANTHROPIC_MODEL'],'local:8b')
         self.assertEqual(actual['ANTHROPIC_DEFAULT_OPUS_MODEL'],'local:8b')
         records=b.read_json(self.manager.store); records[0]['model']=''; b.write_json(self.manager.store,records)
-        with patch.dict(os.environ,env,clear=True),patch.object(b.os,'execve') as run:
+        with patch.dict(os.environ,env,clear=True),capture_launch(b) as run:
             with self.assertRaises(ValueError): self.manager.launch('agent-'+self.pk,[])
         run.assert_not_called()
 

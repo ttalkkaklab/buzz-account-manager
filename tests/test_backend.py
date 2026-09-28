@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from platform_fixtures import HAS_PRIVATE_MODES, installed_launcher, capture_launch, launch
 
 spec = importlib.util.spec_from_file_location('backend', Path(__file__).resolve().parents[1] / 'Resources/backend.py')
 b = importlib.util.module_from_spec(spec)
@@ -16,6 +17,7 @@ class ManagerTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.home = Path(self.temp.name)
+        installed_launcher(self, self.home)
         self.manager = b.Manager(self.home)
         self.pk = 'a' * 64
         self.records = [
@@ -219,8 +221,8 @@ class ManagerTests(unittest.TestCase):
             env = dict(BUZZ_PRIVATE_KEY='identity', BUZZ_ACP_AGENT_COMMAND='codex-acp',
                        BUZZ_ACP_MODEL='local-model', BUZZ_ACP_EFFORT_LEVEL='high',
                        OPENAI_API_KEY='must-not-reach-local', CODEX_CONFIG='{"model_provider":"openai","model_context_window":32768}')
-            with patch.dict(os.environ, env, clear=True), patch.object(os, 'execve') as execute:
-                self.manager.launch('agent-' + self.pk, [])
+            with patch.dict(os.environ, env, clear=True), capture_launch(b) as execute:
+                launch(self, self.manager, 'agent-' + self.pk, [])
                 runtime = execute.call_args.args[2]
                 config = json.loads(runtime['CODEX_CONFIG'])
                 self.assertEqual(runtime['CODEX_HOME'], a['home'])
@@ -299,8 +301,6 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(updated[1]['agent_command_override'], updated[1]['agent_command'])
         self.assertEqual(updated[1]['env_vars'], {'KEEP_ME':'value'})
         self.assertTrue(Path(updated[1]['acp_command']).exists())
-        for f in self.manager.root.glob('backups/*/*'):
-            self.assertEqual(f.stat().st_mode & 0o777, 0o600)
     @unittest.skipIf(os.name == 'nt', 'posix launcher')
     def test_launcher_pins_python_that_cannot_move(self):
         self.manager.apply(self.request())
@@ -345,8 +345,8 @@ class ManagerTests(unittest.TestCase):
                 self.assertEqual(b.read_json(self.manager.store)[1]['effort_level'], level)
                 env = dict(BUZZ_PRIVATE_KEY='test-identity', BUZZ_ACP_AGENT_COMMAND='claude-agent-acp', BUZZ_ACP_MODEL='opus',
                            BUZZ_ACP_EFFORT_LEVEL=level)
-                with patch.dict(os.environ, env, clear=True), patch.object(os, 'execve') as execute:
-                    self.manager.launch('agent-' + self.pk, [])
+                with patch.dict(os.environ, env, clear=True), capture_launch(b) as execute:
+                    launch(self, self.manager, 'agent-' + self.pk, [])
                     self.assertEqual(execute.call_args.args[2]['CLAUDE_CODE_EFFORT_LEVEL'], level)
         for model in ('opus', 'opus[1m]', 'custom-claude-model'):
             req = self.request()
@@ -378,11 +378,21 @@ class ManagerTests(unittest.TestCase):
     def test_new_profiles_never_copy_tokens(self):
         for provider in ('codex', 'claude', 'grok'):
             a = self.manager.create_account('Test account', provider)
-            self.assertEqual(Path(a['home']).stat().st_mode & 0o777, 0o700)
             self.assertFalse((Path(a['home'])/'auth.json').exists())
             command, env = self.manager.login_plan(a['id'])
             self.assertEqual(env[{'codex':'CODEX_HOME','claude':'CLAUDE_CONFIG_DIR','grok':'GROK_HOME'}[provider]], a['home'])
             self.assertNotIn('--console', command)
+
+    @unittest.skipUnless(HAS_PRIVATE_MODES, 'filesystem cannot enforce POSIX owner-only mode bits')
+    def test_profiles_and_backups_have_private_modes(self):
+        self.manager.apply(self.request())
+        backups = list(self.manager.root.glob('backups/*/*'))
+        self.assertTrue(backups)
+        for path in backups:
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        for provider in ('codex', 'claude', 'grok'):
+            account = self.manager.create_account('Private profile', provider)
+            self.assertEqual(Path(account['home']).stat().st_mode & 0o777, 0o700)
     def test_auth_environment_isolation(self):
         original = dict(HOME='/wrong', GROK_AUTH='test', ANTHROPIC_AUTH_TOKEN='test',
                         OPENAI_API_KEY='test', CLAUDE_SECURESTORAGE_CONFIG_DIR='/wrong',
@@ -407,8 +417,8 @@ class ManagerTests(unittest.TestCase):
             profile = b.read_json(path);profile['account_ids'][provider] = a['id'];profile['active_provider'] = provider;b.write_json(path, profile)
             env = dict(BUZZ_PRIVATE_KEY='test-identity', BUZZ_ACP_AGENT_COMMAND=command,
                        BUZZ_ACP_MODEL='selected', BUZZ_ACP_EFFORT_LEVEL='high', BUZZ_ACP_AGENT_ARGS='agent,stdio')
-            with patch.dict(os.environ, env, clear=True), patch.object(os, 'execve') as execute:
-                self.manager.launch('agent-' + self.pk, [])
+            with patch.dict(os.environ, env, clear=True), capture_launch(b) as execute:
+                launch(self, self.manager, 'agent-' + self.pk, [])
                 actual = execute.call_args.args[2]
                 self.assertEqual(actual['BUZZ_PRIVATE_KEY'], 'test-identity')
                 if provider == 'codex':self.assertEqual(json.loads(actual['CODEX_CONFIG'])['model_reasoning_effort'], 'high')
@@ -419,8 +429,8 @@ class ManagerTests(unittest.TestCase):
     def test_default_effort_clears_stale_native_override(self):
         self.manager.apply(self.request())
         env = dict(BUZZ_PRIVATE_KEY='test', BUZZ_ACP_AGENT_COMMAND='codex-acp', CODEX_CONFIG='{"model_reasoning_effort":"ultra"}')
-        with patch.dict(os.environ, env, clear=True), patch.object(os, 'execve') as execute:
-            self.manager.launch('agent-' + self.pk, [])
+        with patch.dict(os.environ, env, clear=True), capture_launch(b) as execute:
+            launch(self, self.manager, 'agent-' + self.pk, [])
             self.assertNotIn('model_reasoning_effort', json.loads(execute.call_args.args[2]['CODEX_CONFIG']))
     def test_failed_write_rolls_back(self):
         raw = self.manager.store.read_bytes()
