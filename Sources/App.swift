@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct ModelChoice: Codable, Identifiable {
     var id: String
@@ -98,7 +99,7 @@ func pythonExecutable(candidates: [String] = ["/opt/homebrew/bin/python3", "/usr
     }
     throw AppFailure(message: L("Python 3.9 이상을 실행할 수 없습니다. Python 설치 상태를 확인하세요."))
 }
-func callBackend(_ action: String, payload: [String: String]? = nil) async throws -> Data {
+func callBackend(_ action: String, payload: [String: Any]? = nil) async throws -> Data {
     try await withCheckedThrowingContinuation { continuation in
         DispatchQueue.global(qos: .userInitiated).async {
             do {
@@ -144,6 +145,7 @@ struct CreatedAccountSelection: Equatable {
     private var addingForAgent: String?
     private var pendingCreatedAccount: CreatedAccountSelection?
     @Published var accountFilter = "all"
+    @Published var draggingAccount: String?
     @Published var loginAccount: Account?
     @Published var loginOutput = ""
     @Published var loginRunning = false
@@ -211,6 +213,28 @@ struct CreatedAccountSelection: Equatable {
             editAccount = nil
             message = L("계정 정보를 저장했습니다.")
         } catch { self.error = error.localizedDescription }
+    }
+    /// Moves the dragged account into the slot of `target` while the drag is still in flight (same service only).
+    func moveAccount(_ id: String, over target: String) {
+        guard !busy, !loginRunning, id != target, var accounts = snapshot?.accounts,
+              let from = accounts.firstIndex(where: { $0.id == id }), let to = accounts.firstIndex(where: { $0.id == target }),
+              accounts[from].provider == accounts[to].provider else { return }
+        accounts.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        snapshot?.accounts = accounts
+    }
+    /// Persists the order currently shown; a failed save re-reads the backend so the list snaps back.
+    func saveAccountOrder() async {
+        guard !busy, !loginRunning, let ids = snapshot?.accounts.map(\.id), !ids.isEmpty else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            let data = try await callBackend("reorder", payload: ["account_ids": ids])
+            let result = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            message = localizedBackend(result?["message"] as? String ?? "")
+        } catch { self.error = error.localizedDescription }
+        if let data = try? await callBackend("status"), let latest = try? JSONDecoder().decode(Snapshot.self, from: data) {
+            snapshot = latest
+        }
     }
     func changeAccount(_ id: String, restore: Bool = false) async {
         guard !busy, !loginRunning else { return }
@@ -923,6 +947,34 @@ struct AgentEditor: View {
     }
 }
 
+struct AccountDropDelegate: DropDelegate {
+    let target: Account
+    let app: AppModel
+    func validateDrop(info: DropInfo) -> Bool { app.draggingAccount != nil && !app.busy && !app.loginRunning }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func dropEntered(info: DropInfo) {
+        guard let dragged = app.draggingAccount else { return }
+        app.moveAccount(dragged, over: target.id)
+    }
+    func performDrop(info: DropInfo) -> Bool {
+        guard app.draggingAccount != nil else { return false }
+        app.draggingAccount = nil
+        Task { await app.saveAccountOrder() }
+        return true
+    }
+}
+/// Catches drops that land between cards so the order shown is what gets saved.
+struct AccountOrderCommitDelegate: DropDelegate {
+    let app: AppModel
+    func validateDrop(info: DropInfo) -> Bool { app.draggingAccount != nil }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func performDrop(info: DropInfo) -> Bool {
+        guard app.draggingAccount != nil else { return false }
+        app.draggingAccount = nil
+        Task { await app.saveAccountOrder() }
+        return true
+    }
+}
 struct AccountsView: View {
     @Environment(\.locale) private var displayLocale
     @ObservedObject var app: AppModel
@@ -963,6 +1015,14 @@ struct AccountsView: View {
                         ForEach(accounts.filter { $0.provider == provider }) { account in
                             VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 14) {
+                                Image(systemName: "line.3.horizontal")
+                                    .font(.body).foregroundStyle(.tertiary).frame(width: 14, height: 32).contentShape(Rectangle())
+                                    .help(L("끌어서 순서 변경")).accessibilityLabel(L("끌어서 순서 변경"))
+                                    .accessibilityIdentifier("drag-" + account.id)
+                                    .onDrag {
+                                        if !app.busy && !app.loginRunning { app.draggingAccount = account.id }
+                                        return NSItemProvider(object: account.id as NSString)
+                                    }
                                 Image(systemName: account.builtin ? "laptopcomputer" : "person.crop.circle")
                                     .font(.title2).foregroundStyle(.secondary).frame(width: 32)
                                 VStack(alignment: .leading, spacing: 5) {
@@ -1000,6 +1060,9 @@ struct AccountsView: View {
                                 }.secondaryAction(.compact).disabled(app.busy || app.loginRunning)
                             }.font(.caption)
                             }.padding(.vertical, 9)
+                            .opacity(app.draggingAccount == account.id ? 0.55 : 1)
+                            .contentShape(Rectangle())
+                            .onDrop(of: [.text], delegate: AccountDropDelegate(target: account, app: app))
                             .task { if app.usage[account.id] == nil { await app.refreshUsage(account.id) } }
                         }
                     }.padding(22).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
@@ -1023,6 +1086,7 @@ struct AccountsView: View {
                 Text(L("별도 계정은 CLI 설정과 세션도 분리됩니다. 로그인 만료·구독 한도·모델 접근 권한은 서비스가 실행 시 확인합니다."))
                     .font(.caption).foregroundStyle(.tertiary)
             }.padding(32).frame(maxWidth: 890, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
+            .onDrop(of: [.text], delegate: AccountOrderCommitDelegate(app: app))
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .alert(L("계정을 목록에서 삭제할까요?"), isPresented: Binding(
             get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }

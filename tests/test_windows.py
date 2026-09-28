@@ -41,6 +41,37 @@ class WindowsSupportTests(unittest.TestCase):
         self.assertIn('Display-Reset $w.resets_at', quota)
         self.assertNotRegex(quota, r'elseif \(\$script:expanded\[\$identity\]\).*초기화')
 
+    def test_account_blocks_reorder_by_drag_and_drop(self):
+        """#142: every account block is a drop target, the handle starts the drag, and the pure order helper is correct."""
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'windows/App.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn("Invoke-Backend 'reorder' @{account_ids=@($order)}", source)
+        self.assertIn('DoDragDrop([string]$sender.Tag,[Windows.Forms.DragDropEffects]::Move)', source)
+        self.assertIn("$handle.AccessibleName=L '끌어서 순서 변경'", source)
+        self.assertIn("$source.provider -ne $dest.provider) { return }", source)
+        shell = shutil.which('pwsh') or shutil.which('powershell') or shutil.which('powershell.exe')
+        if not shell:
+            self.skipTest('no PowerShell available to execute App.ps1 logic')
+        logic = source[source.index('function Move-AccountOrder'):source.index('function Reorder-Account')]
+        harness = "$ErrorActionPreference='Stop'\n" + logic + """
+$rows=@()
+$rows+=,(Move-AccountOrder @('a','b','c','d') 'd' 'b')
+$rows+=,(Move-AccountOrder @('a','b','c','d') 'a' 'c')
+$rows+=,(Move-AccountOrder @('a','b','c','d') 'b' 'b')
+$rows+=,(Move-AccountOrder @('a','b','c','d') 'zz' 'b')
+ConvertTo-Json -InputObject $rows -Compress -Depth 3
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / 'logic.ps1'
+            script.write_text(harness, encoding='utf-8-sig')
+            result = subprocess.run([shell, '-NoProfile', '-File', str(script)],
+                                    capture_output=True, text=True, encoding='utf-8', check=True)
+            rows = json.loads(result.stdout.lstrip('\ufeff'))
+        self.assertEqual(rows[0], ['a', 'd', 'b', 'c'])   # moving up lands before the target
+        self.assertEqual(rows[1], ['b', 'c', 'a', 'd'])   # moving down lands after the target
+        self.assertEqual(rows[2], ['a', 'b', 'c', 'd'])   # same slot is a no-op
+        self.assertEqual(rows[3], ['a', 'b', 'c', 'd'])   # unknown id is a no-op
+
     def test_stop_buzz_dispatch_is_windows_only_and_mocked(self):
         for platform in ('nt', 'posix'):
             facade = SimpleNamespace(name=platform)

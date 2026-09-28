@@ -283,7 +283,31 @@ class Manager:
         defaults.append(dict(id='default-ollama', name=('이 컴퓨터의 Ollama' if os.name == 'nt' else '이 Mac의 Ollama'), provider='ollama',
                              home=str(self.root / 'ollama/default'), builtin=True, endpoint='http://127.0.0.1:11434'))
         hidden = set(data.get('hidden_defaults', [])) | set(data.get('hidden_accounts', []))
-        return [a for a in defaults + data['accounts'] if include_hidden or a['id'] not in hidden]
+        ordered = self.ordered(defaults + data['accounts'], data.get('account_order', []))
+        return [a for a in ordered if include_hidden or a['id'] not in hidden]
+
+    @staticmethod
+    def ordered(accounts, order):
+        # Saved order first; accounts missing from it keep their registration order behind.
+        rank = {identity: index for index, identity in enumerate(order)}
+        return sorted(accounts, key=lambda a: rank.get(a['id'], len(rank)))
+
+    def reorder_accounts(self, identities):
+        if (not isinstance(identities, list) or not identities or len(set(identities)) != len(identities)
+                or not all(isinstance(i, str) for i in identities)):
+            raise ValueError('계정 순서 목록이 올바르지 않습니다. 새로고침해 주세요.')
+        with self.lock():
+            visible = [a['id'] for a in self.accounts()]
+            if any(i not in visible for i in identities):
+                raise ValueError('계정이 없습니다. 새로고침해 주세요.')
+            # A partial list (one service group) refills only the slots those accounts held.
+            slots = [index for index, identity in enumerate(visible) if identity in identities]
+            for slot, identity in zip(slots, identities):
+                visible[slot] = identity
+            data = read_json(self.registry, {'version': 1, 'accounts': []})
+            data['account_order'] = visible
+            write_json(self.registry, data)
+            return {'message': '계정 순서를 저장했습니다.'}
 
     def account(self, identity):
         for a in self.accounts():
@@ -597,6 +621,8 @@ class Manager:
             data = read_json(self.registry, {'version': 1, 'accounts': []})
             data['hidden_accounts'] = sorted(set(data.get('hidden_accounts', []))
                                              | set(data.pop('hidden_defaults', [])) | {identity})
+            if 'account_order' in data:
+                data['account_order'] = [i for i in data['account_order'] if i != identity]
             write_json(self.registry, data)
             # Keep metadata and credentials intact so the same account can be restored.
             return {'message': '계정 목록에서 제거했습니다. 로그인 파일은 보관합니다.'}
@@ -1160,7 +1186,7 @@ class Manager:
 def main():
     manager = Manager()
     action = sys.argv[1]
-    req = json.load(sys.stdin) if action in ('create', 'update', 'delete', 'restore', 'apply', 'validate', 'usage') else {}
+    req = json.load(sys.stdin) if action in ('create', 'update', 'delete', 'restore', 'reorder', 'apply', 'validate', 'usage') else {}
     if action == 'install-monitor':
         result = manager.install_monitor()
     elif action == 'monitor':
@@ -1179,6 +1205,8 @@ def main():
         result = manager.delete_account(req['account_id'])
     elif action == 'restore':
         result = manager.restore_account(req['account_id'])
+    elif action == 'reorder':
+        result = manager.reorder_accounts(req.get('account_ids'))
     elif action == 'validate':
         manager.validate(req)
         result = {'ok': True}
