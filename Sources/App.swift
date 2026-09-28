@@ -1055,7 +1055,7 @@ struct UsageView: View {
             if let usage = usage {
                 let basic = usage.windows.filter { $0.is_primary == true }
                 ForEach(Array(basic.enumerated()), id: \.offset) { _, window in
-                    quotaRow(window, detail: false)
+                    quotaRow(window)
                 }
                 if basic.isEmpty && !usage.windows.isEmpty {
                     Text(L("기본 사용 한도 정보가 없습니다.")).font(.caption).foregroundStyle(.secondary)
@@ -1068,7 +1068,7 @@ struct UsageView: View {
                     DisclosureGroup(L("자세히 보기"), isExpanded: $expanded) {
                         VStack(alignment: .leading, spacing: 12) {
                             ForEach(Array(usage.windows.enumerated()), id: \.offset) { _, window in
-                                quotaRow(window, detail: true)
+                                quotaRow(window)
                             }
                             ForEach(usage.notes.filter { !$0.contains("사용을 제한") && !$0.contains("한도 도달") }, id: \.self) {
                                 Text(localizedBackend($0)).font(.caption).foregroundStyle(.secondary)
@@ -1082,7 +1082,7 @@ struct UsageView: View {
             } else if !loading { Text(L("잔량 새로고침을 누르면 조회합니다.")).font(.caption).foregroundStyle(.secondary) }
         }.padding(12).background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
     }
-    func quotaRow(_ window: UsageWindow, detail: Bool) -> some View {
+    func quotaRow(_ window: UsageWindow) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(localizedQuotaLabel(window.label)).font(.caption)
@@ -1093,8 +1093,8 @@ struct UsageView: View {
             if let reset = window.resets_at, let date = usageDate(reset) {
                 if date < Date() {
                     Text(L("초기화 시각이 지났습니다. 잔량을 새로고침하세요.")).font(.caption2).foregroundStyle(.secondary)
-                } else if detail {
-                    Text(L("초기화 {0}", String(describing: displayDate(date)))).font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Text(resetTimeDescription(date)).font(.caption2).foregroundStyle(.secondary)
                 }
             }
         }

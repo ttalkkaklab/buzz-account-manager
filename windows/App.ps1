@@ -148,7 +148,7 @@ function Add-Quota($parent,$identity,$width) {
    $reset=[DateTimeOffset]::MinValue
    if ($w.resets_at -and [DateTimeOffset]::TryParse([string]$w.resets_at,[ref]$reset)) {
     if ($reset -lt [DateTimeOffset]::Now) { [void](Label-At $box (L '초기화 시각이 지났습니다. 잔량을 새로고침하세요.') 12 $y ($width-24) 38 9); $y+=40 }
-    elseif ($script:expanded[$identity]) { [void](Label-At $box (L '초기화 {0}' @((Display-Date $w.resets_at))) 12 $y ($width-24) 26 9); $y+=28 }
+    else { [void](Label-At $box (Display-Reset $w.resets_at) 12 $y ($width-24) 26 9); $y+=28 }
    }
   }
   foreach ($note in @($u.notes)) {

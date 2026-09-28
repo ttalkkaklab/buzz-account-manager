@@ -44,3 +44,15 @@ function Display-Date([string]$value) {
     $culture = @{ko='ko-KR'; en='en-US'; vi='vi-VN'}[$script:language]
     return $date.ToLocalTime().ToString('g', [Globalization.CultureInfo]::GetCultureInfo($culture))
 }
+function Relative-Reset([DateTimeOffset]$date, [DateTimeOffset]$now = [DateTimeOffset]::Now) {
+    $seconds = ($date-$now).TotalSeconds
+    if ($seconds -lt 0) { return '' }
+    if ($seconds -lt 3600) { return L '{0}분 뒤' @([Math]::Max(1,[Math]::Ceiling($seconds/60))) }
+    if ($seconds -lt 172800) { return L '{0}시간 뒤' @([Math]::Max(1,[Math]::Ceiling($seconds/3600))) }
+    return L '{0}일 뒤' @([Math]::Max(1,[Math]::Ceiling($seconds/86400)))
+}
+function Display-Reset([string]$value, [DateTimeOffset]$now = [DateTimeOffset]::Now) {
+    $date = [DateTimeOffset]::MinValue
+    if (-not [DateTimeOffset]::TryParse($value, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$date)) { return L '초기화 {0}' @($value) }
+    return L '초기화 {0} · {1}' @((Display-Date $value),(Relative-Reset $date $now))
+}

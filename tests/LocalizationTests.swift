@@ -37,6 +37,15 @@ import Foundation
         UserDefaults.standard.set("en", forKey: "displayLanguage")
         assert(L("구독 계정") == "Subscription accounts")
         assert(localizedBackend("계정이 없습니다. 새로고침해 주세요.") == "Account not found. Please refresh.")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        assert(relativeResetTime(now.addingTimeInterval(61), now: now) == "in 2 min")
+        assert(relativeResetTime(now.addingTimeInterval(7201), now: now) == "in 3 hr")
+        assert(relativeResetTime(now.addingTimeInterval(172801), now: now) == "in 3 days")
+        assert(relativeResetTime(now.addingTimeInterval(-1), now: now) == nil)
+        UserDefaults.standard.set("ko", forKey: "displayLanguage")
+        assert(relativeResetTime(now.addingTimeInterval(7201), now: now) == "3시간 뒤")
+        UserDefaults.standard.set("vi", forKey: "displayLanguage")
+        assert(relativeResetTime(now.addingTimeInterval(7201), now: now) == "sau 3 giờ")
         print("Localization tests passed: \(AppLanguage.translations.count) entries, 3 languages")
     }
 }
