@@ -19,6 +19,8 @@ $env:PYTHONUTF8='1'; $env:PYTHONIOENCODING='utf-8'
 $script:state=$null; $script:busy=$false; $script:loading=$false; $script:saving=$false
 $script:section='accounts'; $script:filter='all'; $script:agentId=''; $script:message=''; $script:messageValues=@()
 $script:usageCache=@{}; $script:expanded=@{}; $script:logins=@{}; $script:hiddenOpen=$false
+$script:editorReady=$false; $script:baseline=$null; $script:pendingAccount=''; $script:columns=$false; $script:connectionLost=$false
+$script:scale=1.0
 $script:bindings=New-Object System.Collections.Generic.List[object]
 $script:selection='system'; $settingsKey='HKCU:\Software\Buzz Account Manager'
 if (Test-Path $settingsKey) {
@@ -70,12 +72,20 @@ function Label-At($parent,$text,$x,$y,$width=700,$height=26,$size=10) {
  $style=if ($size -ge 12) { [Drawing.FontStyle]::Bold } else { [Drawing.FontStyle]::Regular }
  $c.Font=New-Object Drawing.Font('Segoe UI',$size,$style); $parent.Controls.Add($c); return $c
 }
-function Button-At($parent,$text,$x,$y,$width,$callback) {
- $c=New-Object Windows.Forms.Button; $c.Text=$text; $c.SetBounds($x,$y,$width,34)
+# One control ladder for every screen: bar 32 (header and save bar), inline 26
+# (inside cards and dialogs), compact 22 (caption-sized actions in a card).
+$script:tierHeight=@{bar=32;inline=26;compact=22}
+function Button-At($parent,$text,$x,$y,$width,$callback,[string]$tier='inline',[switch]$Primary) {
+ $c=New-Object Windows.Forms.Button; $c.Text=$text; $c.SetBounds($x,$y,$width,$script:tierHeight[$tier])
+ if ($Primary) {
+  $c.FlatStyle='Flat'; $c.BackColor=[Drawing.ColorTranslator]::FromHtml('#30B0C7'); $c.ForeColor=[Drawing.Color]::White
+  $c.FlatAppearance.BorderSize=0; $c.UseVisualStyleBackColor=$false
+ } else { $c.FlatStyle='System' }
+ if ($tier -eq 'compact') { $c.Font=New-Object Drawing.Font('Segoe UI',9) }
  $c.Add_Click($callback); $parent.Controls.Add($c); return $c
 }
 function Combo-At($parent,$x,$y,$width) {
- $c=New-Object Windows.Forms.ComboBox; $c.DropDownStyle='DropDownList'; $c.SetBounds($x,$y,$width,30)
+ $c=New-Object Windows.Forms.ComboBox; $c.DropDownStyle='DropDownList'; $c.SetBounds($x,$y,$width,$script:tierHeight['inline'])
  $parent.Controls.Add($c); return $c
 }
 function Stack($parent,$width=890) {
@@ -191,8 +201,8 @@ function Show-AccountDialog($account=$null) {
  $address.Text=if ($edit) { [string]$account.endpoint } else { 'http://127.0.0.1:11434' }
  $hint=Label-At $dialog '' 24 270 500 62 9
  [void](Label-At $dialog (L '비밀번호와 토큰은 해당 CLI가 보관합니다. 이 앱에는 직접 입력하지 않습니다.') 24 337 500 60 9)
- $cancel=Button-At $dialog (L '취소') 24 410 120 { $this.FindForm().DialogResult='Cancel' }; $cancel.DialogResult='Cancel'; $dialog.CancelButton=$cancel
- $submit=Button-At $dialog '' 312 410 210 {}; $dialog.AcceptButton=$submit
+ $cancel=Button-At $dialog (L '취소') 24 410 120 { $this.FindForm().DialogResult='Cancel' } 'inline'; $cancel.DialogResult='Cancel'; $dialog.CancelButton=$cancel
+ $submit=Button-At $dialog '' 312 410 210 {} 'inline' -Primary; $dialog.AcceptButton=$submit
  $update={
   $p=$providers[$service.SelectedIndex]; $server=$p -eq 'ollama' -or ($p -eq 'codex' -and $local.Checked)
   $local.Visible=$p -eq 'codex'; $address.Visible=$server; $addressLabel.Visible=$server; $address.Enabled=(-not $edit -or $p -eq 'ollama')
@@ -211,7 +221,14 @@ function Show-AccountDialog($account=$null) {
   } catch { Show-Error $_.Exception.Message }
  })
  & $update
- try { if ($dialog.ShowDialog($form) -eq 'OK') { $created=$dialog.Tag; Refresh-State; if (-not $edit -and -not (Is-Server $created)) { Start-Login $created } } } finally { $dialog.Dispose() }
+ try {
+  if ($dialog.ShowDialog($form) -eq 'OK') {
+   $created=$dialog.Tag
+   if (-not $edit -and $script:section -eq 'agents') { $script:pendingAccount=[string]$created.id }
+   Refresh-State
+   if (-not $edit -and -not (Is-Server $created)) { Start-Login $created }
+  }
+ } finally { $dialog.Dispose() }
 }
 function Render-Accounts {
  $stack=Stack $accountPage; $stack.Location=New-Object Drawing.Point(32,24)
@@ -220,8 +237,8 @@ function Render-Accounts {
  [void](Label-At $header (L '서비스마다 여러 계정을 등록하고 에이전트에 연결하세요.') 0 46 540 40)
  [void](Button-At $header (L '잔량 새로고침') 550 4 168 {
   try { foreach ($a in @($script:state.accounts)) { if (-not $script:logins.ContainsKey($a.id)) { $script:usageCache[$a.id]=Invoke-Backend 'usage' @{account_id=$a.id} } }; Render-Content } catch { Show-Error $_.Exception.Message }
- })
- [void](Button-At $header (L '계정 추가') 732 4 152 { Show-AccountDialog })
+ } 'bar')
+ [void](Button-At $header (L '계정 추가') 732 4 152 { Show-AccountDialog } 'bar' -Primary)
  [void](Label-At $header (Message-Text) 0 87 880 42 9)
  $filters=New-Object Windows.Forms.FlowLayoutPanel; $filters.Size=New-Object Drawing.Size(890,42); $filters.AccessibleName=L '프로바이더 필터'; $stack.Controls.Add($filters)
  foreach ($id in @('all','codex','claude','grok','ollama')) {
@@ -232,7 +249,7 @@ function Render-Accounts {
   $r.Add_Click({ $script:filter=$this.Tag; Render-Content }); $filters.Controls.Add($r)
  }
  $visible=@($script:state.accounts | Where-Object { $script:filter -eq 'all' -or $_.provider -eq $script:filter })
- if (-not $visible.Count) { $empty=Card $stack 130; $text=Label-At $empty (L '표시할 계정이 없습니다.') 20 22 850 35; $text.TextAlign='MiddleCenter'; [void](Button-At $empty (L '계정 추가') 345 70 200 { Show-AccountDialog }) }
+ if (-not $visible.Count) { $empty=Card $stack 130; $text=Label-At $empty (L '표시할 계정이 없습니다.') 20 22 850 35; $text.TextAlign='MiddleCenter'; [void](Button-At $empty (L '계정 추가') 345 70 200 { Show-AccountDialog } 'inline') }
  foreach ($p in @('codex','claude','grok','ollama')) {
   $group=@($visible | Where-Object provider -eq $p); if (-not $group.Count) { continue }
   $card=Card $stack 100; Badge $card $p 22 18; $blocks=Stack $card 842; $blocks.Location=New-Object Drawing.Point(22,57); $total=57
@@ -241,7 +258,7 @@ function Render-Accounts {
    $accountIcon=Label-At $block ([string][char]$(if ($a.builtin) { 0xE7F4 } else { 0xE77B })) 0 0 32 32 16
    $accountIcon.Font=New-Object Drawing.Font('Segoe MDL2 Assets',16)
    [void](Label-At $block (Account-Name $a) 46 0 439 28 11)
-   if (-not $a.builtin) { $edit=Button-At $block (L '계정 정보 수정') 650 0 180 { Show-AccountDialog $this.Tag }; $edit.Tag=$a }
+   if (-not $a.builtin) { $edit=Button-At $block (L '계정 정보 수정') 650 0 180 { Show-AccountDialog $this.Tag } 'inline'; $edit.Tag=$a }
    $server=Is-Server $a
    $statusKey=if ($server) { if ($a.ready) { '서버 연결됨' } else { '서버 연결 필요' } } else { if ($a.ready) { '로그인 정보 있음' } else { '로그인 필요' } }
    $stateLabel=Label-At $block (L $statusKey) 0 34 560 26 9; if (-not $a.ready) { $stateLabel.ForeColor=[Drawing.Color]::DarkOrange }
@@ -249,12 +266,12 @@ function Render-Accounts {
    $path.Font=New-Object Drawing.Font('Consolas',9); $path.SetBounds(0,64,830,24); $block.Controls.Add($path)
    if ($server -or -not $a.builtin) {
     $key=if ($server) { '연결 확인' } elseif ($a.ready) { '다시 로그인' } else { '로그인' }
-    $main=Button-At $block (L $key) 650 34 180 { try { if (Is-Server $this.Tag) { Refresh-State } else { Start-Login $this.Tag } } catch { Show-Error $_.Exception.Message } }
+    $main=Button-At $block (L $key) 650 34 180 { try { if (Is-Server $this.Tag) { Refresh-State } else { Start-Login $this.Tag } } catch { Show-Error $_.Exception.Message } } 'inline'
     $main.Tag=$a; $main.Enabled=(-not $script:logins.ContainsKey($a.id))
    } else { [void](Label-At $block (L '기본 계정') 650 36 180 26 9) }
    $quota=Stack $block 830; $quota.Location=New-Object Drawing.Point(0,90); $qh=Add-Quota $quota $a.id 830; $y=90+$qh+16
-   $refresh=Button-At $block (L '이 계정 잔량 새로고침') 0 $y 360 { Refresh-Usage $this.Tag }; $refresh.Tag=$a.id; $refresh.Enabled=(-not $script:logins.ContainsKey($a.id))
-   $delete=Button-At $block (L '계정 삭제') 650 $y 180 { Remove-Account $this.Tag }; $delete.Tag=$a; $delete.Enabled=(-not $script:logins.ContainsKey($a.id)); $delete.ForeColor=[Drawing.Color]::Firebrick
+   $refresh=Button-At $block (L '이 계정 잔량 새로고침') 0 $y 360 { Refresh-Usage $this.Tag } 'compact'; $refresh.Tag=$a.id; $refresh.Enabled=(-not $script:logins.ContainsKey($a.id))
+   $delete=Button-At $block (L '계정 삭제') 650 $y 180 { Remove-Account $this.Tag } 'compact'; $delete.Tag=$a; $delete.Enabled=(-not $script:logins.ContainsKey($a.id)); $delete.ForeColor=[Drawing.Color]::Firebrick
    $block.Height=$y+43; $total+=$block.Height+9
   }; $card.Height=$total+18
  }
@@ -266,7 +283,7 @@ function Render-Accounts {
   if ($script:hiddenOpen) {
    $y=48; foreach ($a in $hidden) {
     [void](Label-At $panel ((Provider-Name $a.provider)+' · '+(Account-Name $a)) 22 $y 620 34)
-    $restore=Button-At $panel (L '복원') 688 $y 174 { try { $r=Invoke-Backend 'restore' @{account_id=$this.Tag}; Set-Message $r.message; Refresh-State } catch { Show-Error $_.Exception.Message } }
+    $restore=Button-At $panel (L '복원') 688 $y 174 { try { $r=Invoke-Backend 'restore' @{account_id=$this.Tag}; Set-Message $r.message; Refresh-State } catch { Show-Error $_.Exception.Message } } 'inline'
     $restore.Tag=$a.id; $restore.Enabled=$script:logins.Count -eq 0; $y+=42
    }
   }
@@ -300,8 +317,37 @@ function Fill-Efforts {
  $effort.SelectedIndex=0; if ($previous -and $effort.Items.Contains($previous)) { $effort.SelectedItem=$previous }
  Update-Save
 }
+function Agent-Baseline($a) {
+ return @{provider=[string]$a.provider;account=[string]$a.account_id;model=([string]$a.model).Trim();effort=[string]$a.effort;
+  fallbacks=(@(@($a.fallback_ids) | Where-Object { $_ }) -join ',');auto=[bool]$a.auto_fallback}
+}
+function Agent-Current {
+ $ids=@($fallbacks | ForEach-Object { if ($_.SelectedItem -and $_.SelectedItem.id) { [string]$_.SelectedItem.id } })
+ return @{provider=[string]$provider.SelectedItem;account=[string]$assigned.SelectedItem.id;model=$model.Text.Trim();
+  effort=$(if ($effort.SelectedIndex -gt 0) { [string]$effort.SelectedItem } else { '' });fallbacks=($ids -join ',');
+  auto=($automatic.Checked -and $fallbackCard.Visible)}
+}
+function Agent-Changed {
+ if (-not $script:baseline) { return $false }
+ $now=Agent-Current
+ foreach ($key in @('provider','account','model','effort','fallbacks','auto')) { if ($now[$key] -ne $script:baseline[$key]) { return $true } }
+ return $false
+}
+# Save bar status line, in the order the spec fixes: progress, unsaved changes,
+# result, default. Unsaved beats the result so a stale "saved" line cannot hide it.
+function Status-Text {
+ if (($script:busy -or $script:saving) -and $script:message) { return Message-Text }
+ if ($script:connectionLost) { return L '저장한 계정의 실행 연결이 끊겼습니다. 계정을 확인하고 설정 저장을 누르세요.' }
+ if (Agent-Changed) { return L '저장하지 않은 변경이 있습니다. 저장하면 실행 중인 Buzz를 종료합니다.' }
+ if ($script:message) { return Message-Text }
+ return L '설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.'
+}
 function Update-Save {
- if ($save) { $save.Enabled=($assigned.SelectedItem -and $assigned.SelectedItem.ready -and $model.Text.Trim().Length -gt 0 -and -not $script:busy) }
+ if (-not $script:editorReady -or $save.IsDisposed) { return }
+ $changed=Agent-Changed
+ $save.Enabled=($changed -and $assigned.SelectedItem -and $assigned.SelectedItem.ready -and $model.Text.Trim().Length -gt 0 -and -not $script:busy -and -not $script:saving)
+ $discard.Visible=($changed -and -not $script:busy -and -not $script:saving)
+ $saveMessage.Text=Status-Text; $tooltip.SetToolTip($saveMessage,$saveMessage.Text)
 }
 function Fill-Models {
  $model.Items.Clear()
@@ -314,7 +360,7 @@ function Fill-Models {
  if (Is-Server $assigned.SelectedItem) { $accountState.Text=[string]$assigned.SelectedItem.endpoint+' · '+(L '도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 도구 모음의 새로고침을 누르세요.') }
  $modelHint.Text=if ($provider.SelectedItem -eq 'ollama') { if ($model.Items.Count) { L 'Ollama 설치 모델' } else { L '사용할 로컬 모델이 없습니다. Ollama 서버에 도구 호출을 지원하는 모델을 설치하고 새로고침하세요.' } } elseif ($provider.SelectedItem -eq 'claude') { L 'CLI 모델 별칭' } else { L '로컬 모델 캐시' }
  $effortHint.Text=if ($provider.SelectedItem -eq 'ollama') { L 'Ollama는 모델의 기본 추론 설정을 사용합니다. 구독 계정의 사용량은 차감하지 않습니다.' } elseif (Is-Server $assigned.SelectedItem) { L '서버에 설치된 로컬 모델을 선택하세요.' } else { L '높을수록 더 오래 생각하며 구독 사용량이 늘 수 있습니다. 지원 범위는 모델마다 다릅니다.' }
- $fallbackPanel.Visible=($provider.SelectedItem -in @('codex','claude') -and -not (Is-Server $assigned.SelectedItem))
+ $fallbackCard.Visible=($provider.SelectedItem -in @('codex','claude') -and -not (Is-Server $assigned.SelectedItem))
  $automatic.Checked=$false; Fill-Fallbacks; Fill-Efforts
 }
 function Fill-Accounts {
@@ -337,7 +383,7 @@ function Save-Agent {
   $ids=@($fallbacks | ForEach-Object { if ($_.SelectedItem.id) { $_.SelectedItem.id } })
   $request=@{agent_id=$a.id;account_id=$assigned.SelectedItem.id;provider=[string]$provider.SelectedItem;model=$model.Text;
    effort=$(if ($effort.SelectedIndex -gt 0) { [string]$effort.SelectedItem } else { '' });revision=$script:state.revision;
-   fallback_ids=$ids;auto_fallback=($automatic.Checked -and $fallbackPanel.Visible);expected_account_id=$a.account_id}
+   fallback_ids=$ids;auto_fallback=($automatic.Checked -and $fallbackCard.Visible);expected_account_id=$a.account_id}
   $saveMessage.Text=L '로그인과 모델 설정을 확인하는 중…'
   $null=Invoke-Backend 'validate' $request
   $saveMessage.Text=L 'Buzz를 정상 종료하는 중…'
@@ -357,7 +403,99 @@ function Save-Agent {
  } catch { Show-Error $_.Exception.Message }
  finally { $script:saving=$false; $form.Enabled=$true; $form.UseWaitCursor=$false; Update-Save }
 }
+function Card-At($parent,$x,$y,$width) {
+ $c=New-Object Windows.Forms.Panel; $c.SetBounds($x,$y,$width,100)
+ $c.BackColor=[Drawing.SystemColors]::ControlLightLight; $c.BorderStyle='FixedSingle'
+ $parent.Controls.Add($c); return $c
+}
+function Wide($control) { $control.Anchor='Top,Left,Right'; return $control }
+function Build-Settings($parent,$width) {
+ $card=Card-At $parent 32 132 $width; $inner=$width-40; $y=20
+ [void](Wide (Label-At $card ('01  '+(L 'AI 서비스')) 20 $y $inner 26 12)); $y+=32
+ $script:provider=Wide (Combo-At $card 20 $y $inner); $provider.Items.AddRange(@('codex','claude','grok','ollama'))
+ $provider.FormattingEnabled=$true; $provider.Add_Format({ $_.Value=Provider-Name ([string]$_.ListItem) }); $y+=42
+ [void](Wide (Label-At $card ('02  '+(L '구독 계정')) 20 $y $inner 26 12)); $y+=32
+ $script:assigned=Wide (Combo-At $card 20 $y ($inner-190)); $assigned.DisplayMember='name'
+ $add=Button-At $card (L '계정 추가') (20+$inner-170) ($y-2) 170 { Show-AccountDialog } 'inline'; $add.Anchor='Top,Right'; $y+=32
+ $script:accountState=Wide (Label-At $card '' 20 $y $inner 40 9); $y+=48
+ [void](Wide (Label-At $card ('03  '+(L '모델')) 20 $y $inner 26 12)); $y+=32
+ $script:model=Wide (Combo-At $card 20 $y $inner); $y+=32
+ $script:manual=New-Object Windows.Forms.CheckBox; $manual.Text=L '모델 ID 직접 입력'; $manual.SetBounds(20,$y,$inner,26)
+ $manual.Anchor='Top,Left,Right'; $card.Controls.Add($manual); $y+=30
+ $script:modelHint=Wide (Label-At $card '' 20 $y $inner 40 9); $y+=48
+ [void](Wide (Label-At $card ('04  '+(L 'Effort')) 20 $y $inner 26 12)); $y+=32
+ $script:effort=Wide (Combo-At $card 20 $y $inner); $y+=32
+ $script:effortHint=Wide (Label-At $card '' 20 $y $inner 44 9); $y+=48
+ $card.Height=$y; return $card
+}
+function Build-Usage($parent,$width,$a) {
+ $card=Card-At $parent 32 132 $width; $inner=$width-40
+ [void](Label-At $card (L '현재 구독 계정 잔량') 20 18 ($inner-190) 28 12)
+ $current=@($script:state.accounts | Where-Object id -eq $a.account_id) | Select-Object -First 1
+ [void](Wide (Label-At $card $(if ($current) { Account-Name $current } else { L '계정 등록 필요' }) 20 50 $inner 26))
+ $refresh=Button-At $card (L '잔량 새로고침') (20+$inner-170) 16 170 { Refresh-Usage $this.Tag } 'inline'
+ $refresh.Anchor='Top,Right'; $refresh.Tag=$a.account_id; $refresh.Enabled=$null -ne $current
+ $quota=Stack $card $inner; $quota.Location=New-Object Drawing.Point(20,82)
+ $card.Height=102+(Add-Quota $quota $a.account_id $inner); return $card
+}
+function Build-Fallbacks($parent,$width) {
+ $card=Card-At $parent 32 132 $width; $inner=$width-40; $y=20
+ [void](Wide (Label-At $card (L '예비 구독 계정 · 최대 3개') 20 $y $inner 28 11)); $y+=34
+ $script:fallbacks=@()
+ for ($i=0; $i -lt 3; $i++) {
+  [void](Label-At $card (L '예비 {0}' @([string]($i+1))) 20 $y 60 26 9)
+  $c=Wide (Combo-At $card 86 $y ($inner-66)); $c.DisplayMember='name'; $script:fallbacks+=,$c
+  $c.Add_SelectedIndexChanged({ if (-not $script:loading) { Fill-Fallbacks; Update-Save } }); $y+=32
+ }
+ $y+=4
+ $script:automatic=New-Object Windows.Forms.CheckBox; $automatic.Text=L '한도 소진 시 예비 계정으로 자동 전환'
+ $automatic.SetBounds(20,$y,$inner,44); $automatic.Anchor='Top,Left,Right'; $card.Controls.Add($automatic)
+ $automatic.Add_CheckedChanged({ Update-Save }); $y+=48
+ [void](Wide (Label-At $card (L '5분마다 잔량을 조회하고 위 순서대로 전환합니다. 모델과 effort는 유지합니다. 조회 실패 시에는 전환하지 않습니다.') 20 $y $inner 50 9)); $y+=54
+ $warning=Wide (Label-At $card (L '앱을 닫아도 이 컴퓨터에 로그인한 동안 동작합니다. 계정을 전환하면 실행 중인 Buzz를 종료합니다. Buzz는 직접 시작하세요.') 20 $y $inner 58 9)
+ $warning.ForeColor=[Drawing.Color]::DarkOrange; $y+=62
+ if ($script:state.monitor.checked_at) { [void](Wide (Label-At $card (L '자동 조회: {0}' @((Display-Date $script:state.monitor.checked_at))) 20 $y $inner 26 9)); $y+=30 }
+ $events=@($script:state.monitor.last_events | ForEach-Object { Localize-Backend $_ }) -join ' / '
+ if ($events) { [void](Wide (Label-At $card $events 20 $y $inner 34 9)); $y+=38 }
+ $card.Height=$y; return $card
+}
+# $unit is the unit the controls currently live in: 1 while the fresh tree is
+# still logical, $script:scale once Render-Content has scaled it.
+function Place-SaveBar([double]$unit=$script:scale) {
+ if (-not $script:editorReady -or $script:save.IsDisposed) { return }
+ $width=[int]($script:save.Parent.ClientSize.Width*$unit/$script:scale); $s=$unit
+ $script:save.Left=$width-[int](204*$s); $script:discard.Left=$width-[int](396*$s)
+ $script:saveMessage.Width=[Math]::Max([int](120*$s),$width-[int](420*$s))
+}
+# Rebuilding the editor seeds every control from the saved agent again.
+function Discard-Changes {
+ if (-not $script:editorReady -or $script:busy -or $script:saving) { return }
+ Render-Content
+}
+# Detail width, not window width: the rail and the agent list make the two differ.
+function Layout-Editor([double]$unit=$script:scale) {
+ if (-not $script:editorReady) { return }
+ $s=$unit; $pad=[int](32*$s); $gap=[int](24*$s); $top=[int](132*$s)
+ $detail=[int]($script:editorPanel.ClientSize.Width*$unit/$script:scale)
+ $script:columns=$detail -ge [int](1088*$s)
+ $right=[int](360*$s)
+ $content=[Math]::Max($right,$detail-[int](84*$s))
+ $left=$content
+ if ($script:columns) { $left=[Math]::Min(($content-$gap-$right),([int](1240*$s)-2*$pad-$gap-$right)) }
+ $script:headerPanel.SetBounds($pad,$gap,$content,[int](96*$s))
+ $script:settingsCard.SetBounds($pad,$top,$left,$script:settingsCard.Height)
+ if ($script:columns) {
+  $x=$pad+$left+$gap
+  $script:usageCard.SetBounds($x,$top,$right,$script:usageCard.Height)
+  $script:fallbackCard.SetBounds($x,($top+$script:usageCard.Height+$gap),$right,$script:fallbackCard.Height)
+ } else {
+  $y=$top+$script:settingsCard.Height+$gap
+  $script:usageCard.SetBounds($pad,$y,$left,$script:usageCard.Height)
+  $script:fallbackCard.SetBounds($pad,($y+$script:usageCard.Height+$gap),$left,$script:fallbackCard.Height)
+ }
+}
 function Render-Agents {
+ $script:editorReady=$false
  $listPanel=New-Object Windows.Forms.Panel; $listPanel.Dock='Left'; $listPanel.Width=260; $agentPage.Controls.Add($listPanel)
  [void](Label-At $listPanel (L '에이전트') 16 16 228 30 13)
  [void](Label-At $listPanel (L '이 컴퓨터의 에이전트') 16 48 228 42 9)
@@ -369,13 +507,12 @@ function Render-Agents {
   $sub=$item.SubItems.Add((Provider-Name $a.provider)); $sub.ForeColor=Provider-Color $a.provider
   [void]$list.Items.Add($item); if ($a.id -eq $script:agentId) { $item.Selected=$true }
  }
- $editor=New-Object Windows.Forms.Panel; $editor.Dock='Fill'; $editor.AutoScroll=$true; $editor.Padding=New-Object Windows.Forms.Padding(24)
- $agentPage.Controls.Add($editor); $editor.BringToFront()
+ $editor=New-Object Windows.Forms.Panel; $editor.Dock='Fill'; $agentPage.Controls.Add($editor); $editor.BringToFront()
  $a=@($script:state.agents | Where-Object id -eq $script:agentId) | Select-Object -First 1
  if (-not $a) {
   [void](Label-At $listPanel (L '등록된 에이전트가 없습니다. Buzz에서 에이전트를 만든 뒤 새로고침하세요.') 16 94 225 120)
-  [void](Label-At $editor (L '에이전트를 선택하세요') 24 24 550 40 20)
-  [void](Label-At $editor (L 'Buzz에 등록된 에이전트가 왼쪽에 표시됩니다.') 24 80 550 60); return
+  [void](Label-At $editor (L '에이전트를 선택하세요') 32 32 550 40 20)
+  [void](Label-At $editor (L 'Buzz에 등록된 에이전트가 왼쪽에 표시됩니다.') 32 88 550 60); return
  }
  $list.Add_SelectedIndexChanged({
   if ($this.SelectedItems.Count -and $this.SelectedItems[0].Tag -ne $script:agentId) {
@@ -383,49 +520,36 @@ function Render-Agents {
    [void]$this.BeginInvoke([Action]{ if (-not $form.IsDisposed) { Render-Content } })
   }
  })
- $stack=Stack $editor 730; $stack.Location=New-Object Drawing.Point(24,24)
- $head=Card $stack 124 730; [void](Label-At $head $a.name 22 12 465 42 20); Badge $head $a.provider 540 18
- [void](Label-At $head (L '구독 계정과 생각의 깊이를 선택하세요.') 22 58 680 26)
- [void](Label-At $head (L '이름 · Buzz 신원 · 팀은 그대로 유지합니다.') 22 88 680 26 9)
- $usage=Card $stack 120 730; [void](Label-At $usage (L '현재 구독 계정 잔량') 22 16 460 30 12)
- $current=@($script:state.accounts | Where-Object id -eq $a.account_id) | Select-Object -First 1
- [void](Label-At $usage $(if ($current) { Account-Name $current } else { L '계정 등록 필요' }) 22 46 430 28)
- $ur=Button-At $usage (L '잔량 새로고침') 526 18 180 { Refresh-Usage $this.Tag }; $ur.Tag=$a.account_id; $ur.Enabled=$null -ne $current
- $qs=Stack $usage 682; $qs.Location=New-Object Drawing.Point(22,80); $usage.Height=100+(Add-Quota $qs $a.account_id 682)
- $settings=Card $stack 1010 730
- [void](Label-At $settings ('01  '+(L 'AI 서비스')) 22 18 680 28 12)
- $script:provider=Combo-At $settings 22 52 680; $provider.Items.AddRange(@('codex','claude','grok','ollama'))
- $provider.FormattingEnabled=$true; $provider.Add_Format({ $_.Value=Provider-Name ([string]$_.ListItem) })
- [void](Label-At $settings ('02  '+(L '구독 계정')) 22 99 680 28 12)
- $script:assigned=Combo-At $settings 22 134 480; $assigned.DisplayMember='name'
- [void](Button-At $settings (L '계정 추가') 520 132 182 { Show-AccountDialog })
- $script:accountState=Label-At $settings '' 22 174 680 42 9
- $script:fallbackPanel=New-Object Windows.Forms.Panel; $fallbackPanel.SetBounds(22,216,680,370); $settings.Controls.Add($fallbackPanel)
- [void](Label-At $fallbackPanel (L '예비 구독 계정 · 최대 3개') 0 0 670 30 11)
- $script:fallbacks=@()
- for ($i=0; $i -lt 3; $i++) {
-  [void](Label-At $fallbackPanel (L '예비 {0}' @([string]($i+1))) 0 (38+$i*38) 120 30 9)
-  $c=Combo-At $fallbackPanel 130 (34+$i*38) 540; $c.DisplayMember='name'; $script:fallbacks+=,$c
-  $c.Add_SelectedIndexChanged({ if (-not $script:loading) { Fill-Fallbacks } })
- }
- $script:automatic=New-Object Windows.Forms.CheckBox; $automatic.Text=L '한도 소진 시 예비 계정으로 자동 전환'; $automatic.SetBounds(0,154,670,38); $fallbackPanel.Controls.Add($automatic)
- [void](Label-At $fallbackPanel (L '5분마다 잔량을 조회하고 위 순서대로 전환합니다. 모델과 effort는 유지합니다. 조회 실패 시에는 전환하지 않습니다.') 0 198 670 50 9)
- $warning=Label-At $fallbackPanel (L '앱을 닫아도 이 컴퓨터에 로그인한 동안 동작합니다. 계정을 전환하면 실행 중인 Buzz를 종료합니다. Buzz는 직접 시작하세요.') 0 250 670 60 9; $warning.ForeColor=[Drawing.Color]::DarkOrange
- if ($script:state.monitor.checked_at) { [void](Label-At $fallbackPanel (L '자동 조회: {0}' @((Display-Date $script:state.monitor.checked_at))) 0 310 670 26 9) }
- $events=@($script:state.monitor.last_events | ForEach-Object { Localize-Backend $_ }) -join ' / '
- [void](Label-At $fallbackPanel $events 0 338 670 32 9)
- [void](Label-At $settings ('03  '+(L '모델')) 22 596 680 28 12)
- $script:model=Combo-At $settings 22 632 680
- $script:manual=New-Object Windows.Forms.CheckBox; $manual.Text=L '모델 ID 직접 입력'; $manual.SetBounds(22,668,670,30); $settings.Controls.Add($manual)
- $script:modelHint=Label-At $settings '' 22 704 680 46 9
- [void](Label-At $settings ('04  '+(L 'Effort')) 22 762 680 28 12)
- $script:effort=Combo-At $settings 22 798 680
- $script:effortHint=Label-At $settings '' 22 834 680 46 9
- [void](Label-At $settings (L '설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.') 22 897 680 36)
- [void](Label-At $settings (L '실행 중인 Buzz는 종료되며 모든 에이전트의 응답이 중단될 수 있습니다.') 22 939 680 56 9)
- $footer=Card $stack 144 730
- $script:save=Button-At $footer (L '설정 저장') 520 16 182 { Save-Agent }
- $script:saveMessage=Label-At $footer (Message-Text) 22 64 680 64
+ # Dock the save bar before the scroll area so it keeps the bottom 56px.
+ $bar=New-Object Windows.Forms.Panel; $bar.Dock='Bottom'; $bar.Height=56; $bar.BackColor=[Drawing.SystemColors]::Control
+ $bar.Add_Paint({
+  $pen=New-Object Drawing.Pen([Drawing.SystemColors]::ControlLight)
+  try { $_.Graphics.DrawLine($pen,0,0,$this.Width,0) } finally { $pen.Dispose() }
+ })
+ $editor.Controls.Add($bar)
+ $scroll=New-Object Windows.Forms.Panel; $scroll.Dock='Fill'; $scroll.AutoScroll=$true; $editor.Controls.Add($scroll); $scroll.BringToFront()
+ $script:editorPanel=$editor
+ # Build in logical units; Render-Content scales this fresh tree once, then
+ # Layout-Editor keeps working in device units with $script:scale.
+ $detail=[int]($editor.ClientSize.Width/$script:scale); $script:columns=$detail -ge 1088
+ $content=[Math]::Max(360,$detail-84); $left=$content
+ if ($script:columns) { $left=[Math]::Min(($content-24-360),(1240-64-24-360)) }
+ $script:headerPanel=New-Object Windows.Forms.Panel; $headerPanel.SetBounds(32,24,$content,96); $scroll.Controls.Add($headerPanel)
+ [void](Label-At $headerPanel $a.name 0 0 ($content-200) 34 20)
+ Badge $headerPanel $a.provider ($content-160) 6
+ [void](Label-At $headerPanel (L '구독 계정과 생각의 깊이를 선택하세요.') 0 36 ($content-200) 26)
+ [void](Label-At $headerPanel (L '이름 · Buzz 신원 · 팀은 그대로 유지합니다.') 0 66 ($content-200) 26 9)
+ $script:connectionLost=[bool]$a.account_connection_lost
+ $script:settingsCard=Build-Settings $scroll $left
+ $script:usageCard=Build-Usage $scroll $(if ($script:columns) { 360 } else { $left }) $a
+ $script:fallbackCard=Build-Fallbacks $scroll $(if ($script:columns) { 360 } else { $left })
+ $script:discard=Button-At $bar (L '변경 취소') 0 12 180 { Discard-Changes } 'bar'
+ $script:discard.Anchor='Top,Right'; $script:discard.Visible=$false
+ $script:save=Button-At $bar (L '설정 저장') 0 12 180 { Save-Agent } 'bar' -Primary
+ $script:save.Anchor='Top,Right'
+ $script:saveMessage=Label-At $bar '' 24 16 400 30
+ $script:saveMessage.Anchor='Top,Left,Right'; $script:saveMessage.AutoEllipsis=$true
+ $bar.Add_Resize({ Place-SaveBar })
  $provider.SelectedItem=$a.provider; Fill-Accounts
  for ($i=0; $i -lt $assigned.Items.Count; $i++) { if ($assigned.Items[$i].id -eq $a.account_id) { $assigned.SelectedIndex=$i } }
  Fill-Models
@@ -437,7 +561,20 @@ function Render-Agents {
  $provider.Add_SelectedIndexChanged({ if (-not $script:loading) { Fill-Accounts } })
  $assigned.Add_SelectedIndexChanged({ if (-not $script:loading) { Fill-Models } })
  $model.Add_TextChanged({ Fill-Efforts }); $manual.Add_CheckedChanged({ $model.DropDownStyle=if ($this.Checked) { 'DropDown' } else { 'DropDownList' } })
- Update-Save
+ $effort.Add_SelectedIndexChanged({ Update-Save })
+ $script:baseline=Agent-Baseline $a
+ $script:editorReady=$true
+ # An account created from this screen belongs to the agent being edited.
+ if ($script:pendingAccount) {
+  $added=@($script:state.accounts | Where-Object id -eq $script:pendingAccount) | Select-Object -First 1
+  $script:pendingAccount=''
+  if ($added) {
+   if ($provider.SelectedItem -ne $added.provider) { $provider.SelectedItem=$added.provider }
+   for ($i=0; $i -lt $assigned.Items.Count; $i++) { if ($assigned.Items[$i].id -eq $added.id) { $assigned.SelectedIndex=$i } }
+  }
+ }
+ $editor.Add_Resize({ Layout-Editor })
+ Layout-Editor 1.0; Place-SaveBar 1.0; Update-Save
 }
 function Render-General {
  $stack=Stack $generalPage; $stack.Location=New-Object Drawing.Point(32,24); [void](Label-At $stack (L '일반 설정') 0 0 890 60 20)
@@ -460,7 +597,9 @@ function Render-General {
  [void](Label-At $card (L 'Windows 미리보기 — 실기 검증 전') 24 130 820 32 9)
 }
 function Render-Content {
- $form.SuspendLayout()
+ $form.SuspendLayout(); $script:editorReady=$false
+ $graphics=$form.CreateGraphics()
+ try { $script:scale=$graphics.DpiX/96.0 } finally { $graphics.Dispose() }
  try {
   foreach ($p in @($accountPage,$agentPage,$generalPage)) { Clear-Children $p; $p.Visible=$false }
   $page=@{accounts=$accountPage;agents=$agentPage;general=$generalPage}[$script:section]; $page.Visible=$true
@@ -469,9 +608,7 @@ function Render-Content {
   elseif ($script:section -eq 'accounts') { Render-Accounts } else { Render-Agents }
   # These controls are created after Form's initial Dpi autoscale pass.
   # Scale each fresh tree once; point-sized fonts already use the device DPI.
-  $graphics=$form.CreateGraphics()
-  try { $scale=$graphics.DpiX/96.0 } finally { $graphics.Dispose() }
-  if ([Math]::Abs($scale-1) -gt 0.01) { foreach ($child in $page.Controls) { $child.Scale((New-Object Drawing.SizeF($scale,$scale))) } }
+  if ([Math]::Abs($script:scale-1) -gt 0.01) { foreach ($child in $page.Controls) { $child.Scale((New-Object Drawing.SizeF([single]$script:scale,[single]$script:scale))) } }
   foreach ($button in $railButtons) { $button.BackColor=if ($button.Tag -eq $script:section) { [Drawing.ColorTranslator]::FromHtml('#E2F4F7') } else { [Drawing.SystemColors]::Control }; $button.ForeColor=if ($button.Tag -eq $script:section) { [Drawing.SystemColors]::ControlText } else { [Drawing.SystemColors]::GrayText } }
  } finally { $form.ResumeLayout($true) }
 }
@@ -515,13 +652,17 @@ for ($i=0; $i -lt 3; $i++) {
 }
 $hostPanel=New-Object Windows.Forms.Panel; $hostPanel.Dock='Fill'; $form.Controls.Add($hostPanel); $hostPanel.BringToFront()
 $toolbar=New-Object Windows.Forms.Panel; $toolbar.Dock='Top'; $toolbar.Height=48; $hostPanel.Controls.Add($toolbar)
-$refresh=Button-At $toolbar '' 880 7 180 { try { Refresh-State } catch { Show-Error $_.Exception.Message } }; $refresh.Anchor='Top,Right'; Bind-Text $refresh '새로고침'
+$refresh=Button-At $toolbar '' 880 7 180 { try { Refresh-State } catch { Show-Error $_.Exception.Message } } 'bar'; $refresh.Anchor='Top,Right'; Bind-Text $refresh '새로고침'
 $content=New-Object Windows.Forms.Panel; $content.Dock='Fill'; $hostPanel.Controls.Add($content); $content.BringToFront()
 $accountPage=New-Object Windows.Forms.Panel; $agentPage=New-Object Windows.Forms.Panel; $generalPage=New-Object Windows.Forms.Panel
 foreach ($page in @($accountPage,$agentPage,$generalPage)) { $page.Dock='Fill'; $page.AutoScroll=$true; $page.Padding=New-Object Windows.Forms.Padding(32); $content.Controls.Add($page) }
 $agentPage.Padding=New-Object Windows.Forms.Padding(0)
 $form.Add_KeyDown({
  if ($_.KeyCode -eq 'F5') { $refresh.PerformClick(); $_.Handled=$true }
+ if ($_.Control -and $_.KeyCode -eq 'S') {
+  if ($script:section -eq 'agents' -and $script:editorReady -and $script:save.Enabled) { $script:save.PerformClick() }
+  $_.Handled=$true
+ }
  if ($_.Control -and $_.KeyCode -in @('D1','D2','D3')) { $railButtons[[int]$_.KeyCode-[int][Windows.Forms.Keys]::D1].PerformClick(); $_.Handled=$true }
 })
 $loginTimer=New-Object Windows.Forms.Timer; $loginTimer.Interval=1000

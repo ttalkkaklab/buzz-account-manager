@@ -54,6 +54,79 @@ class WindowsSupportTests(unittest.TestCase):
             manager.return_value.stop_buzz.assert_called_once_with()
             self.assertEqual(json.loads(output.getvalue()), {'ok': True})
 
+    def test_agent_detail_declares_save_bar_and_two_column_layout(self):
+        """#110-6 Windows: the save bar, its shortcut and the 1088 column threshold."""
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'windows/App.ps1').read_text(encoding='utf-8-sig')
+        self.assertIn("$bar.Dock='Bottom'; $bar.Height=56", source)
+        for fragment in ("L '변경 취소'", "L '설정 저장'", "Discard-Changes", "Place-SaveBar"):
+            self.assertIn(fragment, source)
+        # Ctrl+S saves, and only from the agent screen with an enabled save button.
+        self.assertRegex(source, r"\$_\.Control -and \$_\.KeyCode -eq 'S'")
+        self.assertIn("$script:section -eq 'agents' -and $script:editorReady -and $script:save.Enabled", source)
+        # Column threshold is measured on the detail panel, never the window.
+        self.assertIn('$script:editorPanel.ClientSize.Width', source)
+        self.assertIn('$script:columns=$detail -ge [int](1088*$s)', source)
+        # The control ladder from the shared spec, and no stray 34px buttons.
+        self.assertIn('$script:tierHeight=@{bar=32;inline=26;compact=22}', source)
+        self.assertNotIn('$c.SetBounds($x,$y,$width,34)', source)
+        # The two in-card save notes moved into the bar's status line.
+        self.assertNotIn("L '실행 중인 Buzz는 종료되며", source)
+
+    def test_agent_dirty_state_and_status_priority(self):
+        """Run the save-bar logic itself: unsaved changes outrank a stale result."""
+        shell = shutil.which('pwsh') or shutil.which('powershell') or shutil.which('powershell.exe')
+        if not shell:
+            self.skipTest('no PowerShell available to execute App.ps1 logic')
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'windows/App.ps1').read_text(encoding='utf-8-sig')
+        logic = source[source.index('function Agent-Baseline'):source.index('function Update-Save')]
+        harness = """$ErrorActionPreference='Stop'
+function L([string]$key,[object[]]$values=@()) { return $key }
+function Message-Text { return 'RESULT' }
+function Combo($id) { return [pscustomobject]@{SelectedItem=[pscustomobject]@{id=$id;ready=$true};SelectedIndex=0;Text=''} }
+$script:busy=$false; $script:saving=$false; $script:message=''; $script:connectionLost=$false
+""" + logic + """
+$agent=[pscustomobject]@{provider='codex';account_id='a1';model='gpt-x';effort='high';fallback_ids=@('b2','');auto_fallback=$true}
+$script:provider=[pscustomobject]@{SelectedItem='codex'}
+$script:assigned=Combo 'a1'
+$script:model=[pscustomobject]@{Text='gpt-x'}
+$script:effort=[pscustomobject]@{SelectedIndex=1;SelectedItem='high'}
+$script:fallbacks=@((Combo 'b2'),(Combo ''),(Combo ''))
+$script:automatic=[pscustomobject]@{Checked=$true}
+$script:fallbackCard=[pscustomobject]@{Visible=$true}
+$script:baseline=Agent-Baseline $agent
+$rows=@()
+$rows+=[bool](Agent-Changed)
+$rows+=Status-Text
+$script:message='{0} 설정을 저장했습니다. Buzz는 직접 시작하세요.'
+$rows+=Status-Text
+$script:model.Text='gpt-y'
+$rows+=[bool](Agent-Changed)
+$rows+=Status-Text
+$script:busy=$true; $script:message='Buzz를 정상 종료하는 중…'
+$rows+=Status-Text
+$script:busy=$false; $script:model.Text='gpt-x'; $script:automatic.Checked=$false
+$rows+=[bool](Agent-Changed)
+$script:automatic.Checked=$true; $script:fallbacks[1]=Combo 'c3'
+$rows+=[bool](Agent-Changed)
+ConvertTo-Json -InputObject $rows -Compress
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / 'logic.ps1'
+            script.write_text(harness, encoding='utf-8-sig')
+            result = subprocess.run([shell, '-NoProfile', '-File', str(script)],
+                                    capture_output=True, text=True, encoding='utf-8', check=True)
+            rows = json.loads(result.stdout.lstrip('\ufeff'))
+        self.assertFalse(rows[0])                                     # saved agent is clean
+        self.assertEqual(rows[1], '설정은 즉시 저장됩니다. Buzz는 직접 시작하세요.')  # default line
+        self.assertEqual(rows[2], 'RESULT')                           # result line after a save
+        self.assertTrue(rows[3])                                      # editing marks it dirty
+        self.assertEqual(rows[4], '저장하지 않은 변경이 있습니다. 저장하면 실행 중인 Buzz를 종료합니다.')
+        self.assertEqual(rows[5], 'RESULT')                           # progress outranks unsaved
+        self.assertTrue(rows[6])                                      # auto-switch toggle counts
+        self.assertTrue(rows[7])                                      # fallback order counts
+
     def test_windows_payload_includes_shared_catalog(self):
         root = Path(__file__).resolve().parents[1]
         spec = importlib.util.spec_from_file_location('windows_build', root / 'windows/build.py')

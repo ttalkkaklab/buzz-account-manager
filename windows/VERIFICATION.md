@@ -66,3 +66,24 @@ The latter two failures compare mocked `subprocess.run` arguments (`'powershell.
 - M3: row 8 is explicitly partial because PBM_SETSTATE coloring was not reflected by the themed progress bar.
 - The six environment variables remain isolated for every test child. DisplayLanguage was absent before and after restoration/readback; scheduled-task XML was byte-identical. Agent save, Buzz shutdown and monitor installation were not invoked.
 - Evidence runner and output: `.scratch/Senior_ACCOUNT_REVIEW_DRIVER_20260927.ps1` and `.scratch/Senior_ACCOUNT_REVIEW_SANDBOX_20260927/review-gui-result.txt` in the originating Windows workspace. Full Python suite remains 77 tests, 6 failures, 10 errors, 1 skip, matching the accepted portability baseline.
+
+## #110-6 에이전트 상세 반응형·하단 막대 (2026-09-28, 초급개발자(맥북))
+
+기준 `ba8ba232ee90b88666533eec892478efc4c21531`. 맥 판 PR #9(`b378e88`·`55d7420`)의 배치·판정 규칙을 `windows/App.ps1` 에 옮겼습니다.
+
+| 항목 | macOS 정본 | Windows 구현 | 이 맥에서 확인한 것 |
+|---|---|---|---|
+| 1단·2단 문턱 1088(상세 영역 폭) | `Sources/App.swift` `AgentEditor.body` | `Layout-Editor` | 정적 검사 PASS. 실제 전환은 실기 미검증 |
+| 하단 고정 막대 56 | `saveBar` | `Render-Agents` 의 `$bar` + `Place-SaveBar` | 정적 검사 PASS. 실기 미검증 |
+| 상태 줄 우선순위 ① 진행 ② 미저장 ③ 결과 ④ 기본 | `statusMessage` | `Status-Text` | pwsh 7.5.0 으로 함수를 실제 실행해 PASS(반증 확인: 순서를 뒤집으면 실패) |
+| 변경 있음 판정(provider·계정·모델·effort·예비 순서·자동 전환) | `hasChanges` | `Agent-Changed` | 같은 실행 테스트에서 PASS |
+| `변경 취소` | `resetChanges` | `Discard-Changes`(상세를 저장값으로 다시 그림) | 정적 검사 PASS. 실기 미검증 |
+| Ctrl+S | `keyboardShortcut("s")` | `Form.KeyDown` | 정적 검사 PASS. 실기 미검증 |
+| 컨트롤 단계 bar 32 / inline 26 / compact 22 | `Controls.swift` `ControlTier` | `Button-At -Tier` · `Combo-At` | 정적 검사 PASS. 눈으로는 실기 미검증 |
+| 상세에서 만든 계정을 02 에 선택 | `createdAccountSelection` | `$script:pendingAccount` | 실기 미검증 |
+
+- 파싱 검사: `pwsh 7.5.0`(macOS, 임시 설치) `Parser::ParseFile` → `App.ps1`·`Login.ps1`·`Localization.ps1` 오류 0건.
+- 자동 테스트: `python3 -m unittest discover -s tests -v` → 100 tests, OK(skip 1 = Windows 전용 런타임 검사).
+- 알려진 한계: 창 크기를 바꿀 때 카드와 그 안의 컨트롤 폭은 따라가지만 **잔량 뷰 박스 폭은 다음 새로고침에 맞춰집니다**(절대 좌표로 그려 폭 변경에 반응하지 않습니다). 맥 판에 있는 「계정을 만든 직후 잔량 미리 조회」는 넣지 않았습니다 — 서버형 계정에서 불필요한 백엔드 호출이 늘어서, 저장 뒤 조회로 남겼습니다.
+- macOS 화면은 이 변경에서 건드리지 않았습니다(`Sources/` 무변경).
+
