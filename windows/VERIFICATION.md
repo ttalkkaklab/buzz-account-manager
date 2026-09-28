@@ -84,6 +84,7 @@ The latter two failures compare mocked `subprocess.run` arguments (`'powershell.
 
 - 파싱 검사: `pwsh 7.5.0`(macOS, 임시 설치) `Parser::ParseFile` → `App.ps1`·`Login.ps1`·`Localization.ps1` 오류 0건.
 - 자동 테스트: `python3 -m unittest discover -s tests -v` → 100 tests, OK(skip 1 = Windows 전용 런타임 검사).
+- 새 계정이 **다른 서비스**면 저장된 모델·effort·예비·자동 전환은 복원하지 않고 그 서비스의 기본 선택을 둡니다(`Resolve-SavedRestore`, 특급개발자(푼) 재리뷰 `01d7848d`). 같은 서비스면 종전대로 복원합니다.
 - 새 계정 선택은 **에이전트를 바꾸거나 저장하거나 변경 취소를 누를 때만** 풀립니다(특급개발자(푼) 리뷰 `56cd6b02`). 로그인 콘솔이 뜨는 동안·끝난 뒤의 재렌더에서도 유지됩니다.
 - 알려진 한계: 창 크기를 바꿀 때 카드와 그 안의 컨트롤 폭은 따라가지만 **잔량 뷰 박스 폭은 다음 새로고침에 맞춰집니다**(절대 좌표로 그려 폭 변경에 반응하지 않습니다). 맥 판에 있는 「계정을 만든 직후 잔량 미리 조회」는 넣지 않았습니다 — 서버형 계정에서 불필요한 백엔드 호출이 늘어서, 저장 뒤 조회로 남겼습니다.
 - macOS 화면은 이 변경에서 건드리지 않았습니다(`Sources/` 무변경).

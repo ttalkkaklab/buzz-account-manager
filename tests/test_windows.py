@@ -166,6 +166,37 @@ ConvertTo-Json -InputObject $rows -Compress
             rows = json.loads(result.stdout.lstrip('\ufeff'))
         self.assertEqual(rows, ['new1', 'new1', 'new1', 'old2', 'old1', 'old1'])
 
+    def test_saved_model_is_not_forced_onto_another_service(self):
+        """A new account on another service keeps that service's defaults."""
+        shell = shutil.which('pwsh') or shutil.which('powershell') or shutil.which('powershell.exe')
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'windows/App.ps1').read_text(encoding='utf-8-sig')
+        editor = source[source.index('function Render-Agents'):source.index('function Render-General')]
+        # Render order: resolve, fill the new service's lists, only then restore.
+        resolve = editor.index('$restore=Resolve-SavedRestore $a ([string]$provider.SelectedItem)')
+        self.assertLess(resolve, editor.index(' Fill-Models\n'))
+        self.assertLess(editor.index(' Fill-Models\n'), editor.index('if ($restore.restore)'))
+        # Every saved value now flows through the guard, never off the agent record.
+        for direct in ('[string]$a.model', '[string]$a.effort', '$a.fallback_ids[$i]', '[bool]$a.auto_fallback'):
+            self.assertNotIn(direct, editor)
+        if not shell:
+            self.skipTest('no PowerShell available to execute App.ps1 logic')
+        logic = source[source.index('function Resolve-SavedRestore'):source.index('function Agent-Baseline')]
+        harness = logic + """
+$agent=[pscustomobject]@{provider='codex';model='gpt-5-codex';effort='high';fallback_ids=@('codex-b','');auto_fallback=$true}
+ConvertTo-Json -InputObject @((Resolve-SavedRestore $agent 'codex'),(Resolve-SavedRestore $agent 'claude')) -Depth 5 -Compress
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / 'restore.ps1'
+            script.write_text(harness, encoding='utf-8-sig')
+            result = subprocess.run([shell, '-NoProfile', '-File', str(script)],
+                                    capture_output=True, text=True, encoding='utf-8', check=True)
+            same, switched = json.loads(result.stdout.lstrip('\ufeff'))
+        self.assertEqual((same['restore'], same['model'], same['effort'], same['auto']), (True, 'gpt-5-codex', 'high', True))
+        self.assertEqual(same['fallbacks'], ['codex-b'])
+        self.assertEqual((switched['restore'], switched['model'], switched['effort'], switched['auto']), (False, '', '', False))
+        self.assertEqual(switched['fallbacks'] or [], [])
+
     def test_windows_payload_includes_shared_catalog(self):
         root = Path(__file__).resolve().parents[1]
         spec = importlib.util.spec_from_file_location('windows_build', root / 'windows/build.py')

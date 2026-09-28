@@ -326,6 +326,15 @@ function Resolve-Selection([string]$agentId,[string]$savedAccountId,$accounts) {
  if ($script:pendingAccount -and $script:pendingAgent -eq $agentId -and @($accounts | Where-Object id -eq $script:pendingAccount).Count) { return $script:pendingAccount }
  return $savedAccountId
 }
+# Saved model, effort, fallbacks and auto-switch belong to the saved service.
+# When a new account moves the editor to another service, that service's own
+# defaults stand - forcing the old model back would leave, say, a Claude account
+# pinned to a gpt-* id in manual-entry mode.
+function Resolve-SavedRestore($agent,[string]$targetProvider) {
+ if ([string]$agent.provider -ne $targetProvider) { return @{restore=$false;model='';effort='';fallbacks=@();auto=$false} }
+ return @{restore=$true;model=([string]$agent.model);effort=([string]$agent.effort);
+  fallbacks=@(@($agent.fallback_ids) | Where-Object { $_ });auto=[bool]$agent.auto_fallback}
+}
 function Agent-Baseline($a) {
  return @{provider=[string]$a.provider;account=[string]$a.account_id;model=([string]$a.model).Trim();effort=[string]$a.effort;
   fallbacks=(@(@($a.fallback_ids) | Where-Object { $_ }) -join ',');auto=[bool]$a.auto_fallback}
@@ -563,12 +572,15 @@ function Render-Agents {
  $selected=@($script:state.accounts | Where-Object id -eq $target) | Select-Object -First 1
  $provider.SelectedItem=$(if ($selected) { [string]$selected.provider } else { [string]$a.provider }); Fill-Accounts
  for ($i=0; $i -lt $assigned.Items.Count; $i++) { if ($assigned.Items[$i].id -eq $target) { $assigned.SelectedIndex=$i } }
+ $restore=Resolve-SavedRestore $a ([string]$provider.SelectedItem)
  Fill-Models
- if ($model.Items.Contains([string]$a.model)) { $model.SelectedItem=[string]$a.model } elseif ($provider.SelectedItem -ne 'ollama') { $manual.Checked=$true; $model.DropDownStyle='DropDown'; $model.Text=[string]$a.model }
- Fill-Efforts; if ($effort.Items.Contains([string]$a.effort)) { $effort.SelectedItem=[string]$a.effort }
+ if ($restore.restore) {
+  if ($model.Items.Contains($restore.model)) { $model.SelectedItem=$restore.model } elseif ($provider.SelectedItem -ne 'ollama') { $manual.Checked=$true; $model.DropDownStyle='DropDown'; $model.Text=$restore.model }
+ }
+ Fill-Efforts; if ($restore.restore -and $effort.Items.Contains($restore.effort)) { $effort.SelectedItem=$restore.effort }
  $script:loading=$true
- for ($i=0; $i -lt [Math]::Min(3,@($a.fallback_ids).Count); $i++) { for ($j=0; $j -lt $fallbacks[$i].Items.Count; $j++) { if ($fallbacks[$i].Items[$j].id -eq $a.fallback_ids[$i]) { $fallbacks[$i].SelectedIndex=$j } } }
- $script:loading=$false; Fill-Fallbacks; $automatic.Checked=[bool]$a.auto_fallback
+ for ($i=0; $i -lt [Math]::Min(3,@($restore.fallbacks).Count); $i++) { for ($j=0; $j -lt $fallbacks[$i].Items.Count; $j++) { if ($fallbacks[$i].Items[$j].id -eq $restore.fallbacks[$i]) { $fallbacks[$i].SelectedIndex=$j } } }
+ $script:loading=$false; Fill-Fallbacks; $automatic.Checked=$restore.auto
  $provider.Add_SelectedIndexChanged({ if (-not $script:loading) { Fill-Accounts } })
  $assigned.Add_SelectedIndexChanged({ if (-not $script:loading) { Fill-Models } })
  $model.Add_TextChanged({ Fill-Efforts }); $manual.Add_CheckedChanged({ $model.DropDownStyle=if ($this.Checked) { 'DropDown' } else { 'DropDownList' } })
