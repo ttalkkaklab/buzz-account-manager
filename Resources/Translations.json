@@ -978,5 +978,17 @@
   "저장 뒤 계정 연결이 달라졌습니다. Buzz를 시작하기 전에 설정을 새로고침하고 다시 확인하세요.": {
     "en": "The account connection changed after saving. Refresh and check the settings before starting Buzz.",
     "vi": "Liên kết tài khoản đã thay đổi sau khi lưu. Hãy làm mới và kiểm tra cài đặt trước khi khởi động Buzz."
+  },
+  "끌어서 순서 변경": {
+    "en": "Drag to reorder",
+    "vi": "Kéo để sắp xếp lại"
+  },
+  "계정 순서를 저장했습니다.": {
+    "en": "Account order saved.",
+    "vi": "Đã lưu thứ tự tài khoản."
+  },
+  "계정 순서 목록이 올바르지 않습니다. 새로고침해 주세요.": {
+    "en": "The account order list is invalid. Please refresh.",
+    "vi": "Danh sách thứ tự tài khoản không hợp lệ. Vui lòng làm mới."
   }
 }

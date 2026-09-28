@@ -173,6 +173,26 @@ function Start-Login($account) {
  $script:logins[$account.id]=Start-Process powershell.exe -ArgumentList $arguments -PassThru
  Set-Message '로그인 절차를 시작합니다. 브라우저에서 사용할 계정을 확인해 주세요.'; Render-Content
 }
+function Move-AccountOrder([string[]]$ids,[string]$dragged,[string]$target) {
+ # Pure: the dragged account takes the target's slot; everything else keeps its place.
+ $list=[System.Collections.Generic.List[string]]::new([string[]]$ids)
+ $from=$list.IndexOf($dragged); $to=$list.IndexOf($target)
+ if ($from -lt 0 -or $to -lt 0 -or $from -eq $to) { return [string[]]$ids }
+ $list.RemoveAt($from); $list.Insert($to,$dragged); return [string[]]$list
+}
+function Reorder-Account([string]$dragged,[string]$target) {
+ if ($script:logins.Count -or $dragged -eq $target) { return }
+ $accounts=@($script:state.accounts); $source=@($accounts | Where-Object id -eq $dragged) | Select-Object -First 1; $dest=@($accounts | Where-Object id -eq $target) | Select-Object -First 1
+ if (-not $source -or -not $dest -or $source.provider -ne $dest.provider) { return }
+ # Only this service's ids travel; the backend refills just the slots they held, so other services keep their places.
+ $order=Move-AccountOrder @($accounts | Where-Object provider -eq $source.provider | ForEach-Object { [string]$_.id }) $dragged $target
+ try { $r=Invoke-Backend 'reorder' @{account_ids=@($order)}; Set-Message $r.message; Refresh-State } catch { Show-Error $_.Exception.Message }
+}
+function Enable-AccountDrop($control,[string]$identity) {
+ $control.AllowDrop=$true; $control.Tag=$identity
+ $control.Add_DragEnter({ param($sender,$e) if ($e.Data.GetDataPresent([string])) { $e.Effect=[Windows.Forms.DragDropEffects]::Move } })
+ $control.Add_DragDrop({ param($sender,$e) Reorder-Account ([string]$e.Data.GetData([string])) ([string]$sender.Tag) })
+}
 function Remove-Account($account) {
  $body=L '{0} 계정을 목록에서 제거합니다. 로그인 파일과 저장된 인증정보는 보관합니다.' @((Account-Name $account))
  if ($account.builtin) { $body+="`r`n"+(L '숨긴 기본 계정에서 언제든 복원할 수 있습니다.') }
@@ -257,11 +277,15 @@ function Render-Accounts {
    $block=New-Object Windows.Forms.Panel; $block.Width=842; $block.Margin=New-Object Windows.Forms.Padding(0,0,0,9); $blocks.Controls.Add($block)
    $accountIcon=Label-At $block ([string][char]$(if ($a.builtin) { 0xE7F4 } else { 0xE77B })) 0 0 32 32 16
    $accountIcon.Font=New-Object Drawing.Font('Segoe MDL2 Assets',16)
-   [void](Label-At $block (Account-Name $a) 46 0 439 28 11)
+   $nameLabel=Label-At $block (Account-Name $a) 46 0 439 28 11
+   $handle=Label-At $block ([string][char]0xE700) 606 0 32 32 14; $handle.Font=New-Object Drawing.Font('Segoe MDL2 Assets',14)
+   $handle.TextAlign='MiddleCenter'; $handle.Cursor=[Windows.Forms.Cursors]::SizeAll; $handle.AccessibleName=L '끌어서 순서 변경'; $handle.Tag=$a.id
+   $handle.Add_MouseDown({ param($sender,$e) if ($e.Button -eq 'Left' -and -not $script:logins.Count) { [void]$sender.DoDragDrop([string]$sender.Tag,[Windows.Forms.DragDropEffects]::Move) } })
+   foreach ($target in @($block,$accountIcon,$nameLabel,$handle)) { Enable-AccountDrop $target $a.id }
    if (-not $a.builtin) { $edit=Button-At $block (L '계정 정보 수정') 650 0 180 { Show-AccountDialog $this.Tag } 'inline'; $edit.Tag=$a }
    $server=Is-Server $a
    $statusKey=if ($server) { if ($a.ready) { '서버 연결됨' } else { '서버 연결 필요' } } else { if ($a.ready) { '로그인 정보 있음' } else { '로그인 필요' } }
-   $stateLabel=Label-At $block (L $statusKey) 0 34 560 26 9; if (-not $a.ready) { $stateLabel.ForeColor=[Drawing.Color]::DarkOrange }
+   $stateLabel=Label-At $block (L $statusKey) 0 34 560 26 9; if (-not $a.ready) { $stateLabel.ForeColor=[Drawing.Color]::DarkOrange }; Enable-AccountDrop $stateLabel $a.id
    $path=New-Object Windows.Forms.TextBox; $path.Text=if ($server) { $a.endpoint } else { $a.home }; $path.ReadOnly=$true; $path.BorderStyle='None'; $path.BackColor=$block.BackColor
    $path.Font=New-Object Drawing.Font('Consolas',9); $path.SetBounds(0,64,830,24); $block.Controls.Add($path)
    if ($server -or -not $a.builtin) {

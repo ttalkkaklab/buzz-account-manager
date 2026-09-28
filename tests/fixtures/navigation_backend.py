@@ -22,6 +22,10 @@ elif action == 'usage':
     req = json.load(sys.stdin)
     result = dict(account_id=req['account_id'], windows=[], notes=[], checked_at='',
                   status='ok', message='')
+elif action == 'reorder':
+    req = json.load(sys.stdin)
+    (home / 'fixture-reorder.json').write_text(json.dumps(req['account_ids']))
+    result = dict(message='계정 순서를 저장했습니다.')
 else:
     raise RuntimeError('Unexpected fixture action: ' + action)
 print(json.dumps(result))

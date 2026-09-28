@@ -74,6 +74,47 @@ class ManagerTests(unittest.TestCase):
         self.manager.restore_account('default-grok')
         self.assertEqual(self.manager.account('default-grok')['id'], 'default-grok')
 
+    def test_reorder_persists_and_new_accounts_follow_in_registration_order(self):
+        first = self.manager.create_account('First', 'codex')
+        second = self.manager.create_account('Second', 'codex')
+        ids = lambda m: [a['id'] for a in m.accounts()]
+        self.assertEqual(ids(self.manager)[-2:], [first['id'], second['id']])
+        result = self.manager.reorder_accounts([second['id'], 'default-codex', first['id'], 'default-claude', 'default-grok', 'default-ollama'])
+        self.assertEqual(result['message'], '계정 순서를 저장했습니다.')
+        restarted = b.Manager(self.home)
+        self.assertEqual(ids(restarted), [second['id'], 'default-codex', first['id'], 'default-claude', 'default-grok', 'default-ollama'])
+        third = restarted.create_account('Third', 'claude')
+        self.assertEqual(ids(b.Manager(self.home))[-1], third['id'])
+        self.assertEqual(b.read_json(restarted.registry)['account_order'][-1], 'default-ollama')
+
+    def test_partial_reorder_refills_only_the_slots_those_accounts_held(self):
+        codex = self.manager.create_account('Codex two', 'codex')
+        claude = self.manager.create_account('Claude two', 'claude')
+        before = [a['id'] for a in self.manager.accounts()]
+        self.assertEqual(before, ['default-codex', 'default-claude', 'default-grok', 'default-ollama', codex['id'], claude['id']])
+        self.manager.reorder_accounts([claude['id'], 'default-claude'])
+        self.assertEqual([a['id'] for a in b.Manager(self.home).accounts()],
+                         ['default-codex', claude['id'], 'default-grok', 'default-ollama', codex['id'], 'default-claude'])
+
+    def test_reorder_rejects_unknown_hidden_duplicate_and_malformed_lists(self):
+        account = self.manager.create_account('Gone', 'grok')
+        self.manager.delete_account(account['id'])
+        for bad in ([], ['default-codex', 'default-codex'], ['missing'], [account['id']], 'default-codex', [1], None):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.manager.reorder_accounts(bad)
+        self.assertNotIn('account_order', b.read_json(self.manager.registry))
+
+    def test_deleted_account_leaves_the_order_and_restored_account_returns_last(self):
+        account = self.manager.create_account('Movable', 'codex')
+        self.manager.reorder_accounts([account['id'], 'default-codex'])
+        self.assertEqual(b.read_json(self.manager.registry)['account_order'][0], account['id'])
+        self.manager.delete_account(account['id'])
+        self.assertNotIn(account['id'], b.read_json(self.manager.registry)['account_order'])
+        self.assertEqual([a['id'] for a in self.manager.hidden_accounts()], [account['id']])
+        self.manager.restore_account(account['id'])
+        self.assertEqual([a['id'] for a in b.Manager(self.home).accounts()],
+                         ['default-claude', 'default-grok', 'default-ollama', 'default-codex', account['id']])
+
     def test_delete_account_ignores_template_and_inactive_agent_links(self):
         account = self.manager.create_account('Unused', 'codex')
         template = self.records[0]
