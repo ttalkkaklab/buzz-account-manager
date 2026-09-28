@@ -11,12 +11,13 @@ import sys
 
 def reserve_backup_directory(root):
     """Create and return a unique timestamped backup directory."""
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     for suffix in itertools.count():
         name = stamp if suffix == 0 else f'{stamp}-{suffix}'
         candidate = root / name
         try:
-            candidate.mkdir(parents=True, mode=0o700)
+            candidate.mkdir(mode=0o700)
         except FileExistsError:
             continue
         return candidate
