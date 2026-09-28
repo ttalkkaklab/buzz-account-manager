@@ -54,7 +54,8 @@ def directory_of(descriptor):
             name = os.readlink(f'/proc/self/fd/{descriptor}')
             # procfs also returns non-path labels: pipe:[...], socket:[...],
             # and anon_inode:... . Only absolute names identify filesystem nodes.
-            if not os.path.isabs(name):
+            # Mocked Linux tests retain the host's os.path (ntpath on Windows).
+            if not name.startswith('/'):
                 raise OSError('descriptor has no filesystem path')
             return name
         if sys.platform == 'win32':
