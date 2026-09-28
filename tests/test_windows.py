@@ -1,4 +1,5 @@
 """Isolated Windows boundary tests; no live accounts, tasks, or Buzz processes."""
+import sandbox  # Isolate paths and guard writes before loading application code.
 import importlib.util
 import contextlib
 import io

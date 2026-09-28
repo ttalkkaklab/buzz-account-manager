@@ -1,3 +1,4 @@
+import sandbox  # Isolate paths and guard writes before loading application code.
 import copy
 import importlib.util
 from pathlib import Path

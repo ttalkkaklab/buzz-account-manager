@@ -1,4 +1,5 @@
 """Account removal never touches credentials or agent assignments."""
+import sandbox  # Isolate paths and guard writes before loading application code.
 import importlib.util
 from pathlib import Path
 import tempfile

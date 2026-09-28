@@ -1,4 +1,5 @@
 """Restart boundaries: temporary HOME, fake harness, no real credentials or login."""
+import sandbox  # Isolate paths and guard writes before loading application code.
 import importlib.util
 import json
 import os

@@ -1,3 +1,4 @@
+import sandbox  # Isolate paths and guard writes before loading application code.
 import datetime
 import unittest
 from unittest.mock import patch
