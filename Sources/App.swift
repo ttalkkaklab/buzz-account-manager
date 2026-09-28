@@ -172,10 +172,7 @@ struct CreatedAccountSelection: Equatable {
             Task { @MainActor [weak self] in
                 guard let self = self, !self.busy, !self.loginRunning, self.draggingAccount == nil else { return }
                 if let data = try? await callBackend("status"), let latest = try? JSONDecoder().decode(Snapshot.self, from: data) {
-                    self.snapshot = latest
-                    for (id, value) in latest.monitor?.usages ?? [:] {
-                        if value.checked_at > (self.usage[id]?.checked_at ?? "") { self.usage[id] = value }
-                    }
+                    self.applyMonitorSnapshot(latest)
                 }
             }
         }
@@ -186,6 +183,17 @@ struct CreatedAccountSelection: Equatable {
                 if let task = self?.loginProcess, task.isRunning { task.terminate() }
             }
         }
+    }
+
+    /// Applies a background poll's answer. A drag that began while the request was in flight owns the order on screen,
+    /// so a late answer is dropped instead of overwriting it. Returns false when the answer was dropped.
+    @discardableResult func applyMonitorSnapshot(_ latest: Snapshot) -> Bool {
+        guard !busy, !loginRunning, draggingAccount == nil else { return false }
+        snapshot = latest
+        for (id, value) in latest.monitor?.usages ?? [:] {
+            if value.checked_at > (usage[id]?.checked_at ?? "") { usage[id] = value }
+        }
+        return true
     }
 
     func refresh() async {
