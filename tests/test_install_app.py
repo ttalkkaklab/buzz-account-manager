@@ -43,9 +43,12 @@ def installed_version(home):
 
 
 class InstallAppTests(unittest.TestCase):
-    def run_installer(self, home, archive, force=False):
+    def run_installer(self, home, archive, force=False, python_path=None):
         environ = os.environ.copy()
         environ['HOME'] = str(home)
+        if python_path is not None:
+            existing = environ.get('PYTHONPATH')
+            environ['PYTHONPATH'] = str(python_path) + (os.pathsep + existing if existing else '')
         if force:
             environ['BUZZ_INSTALL_FORCE'] = '1'
         else:
@@ -84,13 +87,46 @@ class InstallAppTests(unittest.TestCase):
             self.assertEqual(self.run_installer(downgrade_home, build_11).returncode, 0)
             refused = self.run_installer(downgrade_home, build_10)
             self.assertNotEqual(refused.returncode, 0)
-            self.assertIn('Refusing to replace build 11 with older build 10', refused.stderr)
-            self.assertIn('BUZZ_INSTALL_FORCE=1', refused.stderr)
+            self.assertEqual(
+                refused.stderr,
+                'Refusing to replace build 11 with older build 10. '
+                'Build from the integrated source, or set BUZZ_INSTALL_FORCE=1 '
+                'to install this build anyway.\n',
+            )
             self.assertEqual(installed_version(downgrade_home), '11')
 
             forced = self.run_installer(downgrade_home, build_10, force=True)
             self.assertEqual(forced.returncode, 0, forced.stderr)
             self.assertEqual(installed_version(downgrade_home), '10')
+
+    def test_zip_installer_keeps_backups_unique_within_same_second(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            archive = make_archive(root / 'archive', 10)
+            home = root / 'home'
+            home.mkdir()
+            hook = root / 'fixed-time'
+            hook.mkdir()
+            (hook / 'sitecustomize.py').write_text(
+                'import datetime\n'
+                'class FixedDateTime(datetime.datetime):\n'
+                '    @classmethod\n'
+                '    def now(cls, tz=None):\n'
+                '        return cls(2026, 9, 28, 12, 34, 56, tzinfo=tz)\n'
+                'datetime.datetime = FixedDateTime\n'
+            )
+
+            for _ in range(3):
+                installed = self.run_installer(home, archive, python_path=hook)
+                self.assertEqual(installed.returncode, 0, installed.stderr)
+
+            backup_root = home / '.config/buzz-agents/app-backups'
+            self.assertEqual(
+                sorted(path.name for path in backup_root.iterdir()),
+                ['20260928-123456', '20260928-123456-1'],
+            )
+            self.assertTrue(all((path / 'Buzz Account Manager.app').is_dir()
+                                for path in backup_root.iterdir()))
 
 
 if __name__ == '__main__':
