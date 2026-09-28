@@ -235,7 +235,7 @@ finally:
     def test_preopened_external_descriptor_cannot_truncate(self):
         self.assert_external_descriptor_refused('truncate')
 
-    @unittest.skipUnless(sys.platform == 'darwin' or sys.platform.startswith('linux'),
+    @unittest.skipUnless(sys.platform in ('darwin', 'win32') or sys.platform.startswith('linux'),
                          'platform cannot resolve file descriptors')
     def test_internal_fdopen_and_ftruncate_still_work(self):
         descriptor, name = tempfile.mkstemp()
@@ -245,14 +245,28 @@ finally:
             os.ftruncate(output.fileno(), 3)
         self.assertEqual(Path(name).read_bytes(), b'fix')
 
+    def test_pipe_fdopen_still_works(self):
+        reader, writer = os.pipe()
+        try:
+            with os.fdopen(writer, 'wb', closefd=False) as output:
+                output.write(b'pipe fixture')
+            self.assertEqual(os.read(reader, 12), b'pipe fixture')
+        finally:
+            os.close(writer)
+            os.close(reader)
+
     def test_unresolvable_descriptor_is_refused(self):
         descriptor, _ = tempfile.mkstemp()
         os.close(descriptor)
         with self.assertRaises(PermissionError):
             sandbox.check_write(descriptor)
-        with patch.object(sys, 'platform', 'unsupported'):
-            with self.assertRaises(PermissionError):
-                sandbox.check_write(descriptor)
+        descriptor, _ = tempfile.mkstemp()
+        try:
+            with patch.object(sys, 'platform', 'unsupported'):
+                with self.assertRaises(PermissionError):
+                    sandbox.check_write(descriptor)
+        finally:
+            os.close(descriptor)
 
     def test_null_device_mutation_events_are_refused(self):
         # Emit real event shapes without ever mutating the actual device.

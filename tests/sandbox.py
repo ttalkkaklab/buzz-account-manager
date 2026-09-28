@@ -6,8 +6,19 @@ arbitrary subprocesses. Child processes inherit the isolated home directories.
 import atexit
 import os
 from pathlib import Path
+import stat
 import sys
 import tempfile
+
+if sys.platform == 'win32':
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    _final_path = ctypes.WinDLL('kernel32', use_last_error=True).GetFinalPathNameByHandleW
+    _final_path.argtypes = (wintypes.HANDLE, wintypes.LPWSTR,
+                           wintypes.DWORD, wintypes.DWORD)
+    _final_path.restype = wintypes.DWORD
 
 try:
     import fcntl
@@ -41,6 +52,24 @@ def directory_of(descriptor):
             return os.fsdecode(raw.split(b'\0', 1)[0])
         if sys.platform.startswith('linux'):
             return os.readlink(f'/proc/self/fd/{descriptor}')
+        if sys.platform == 'win32':
+            handle = msvcrt.get_osfhandle(descriptor)
+            size = 32768
+            while True:
+                buffer = ctypes.create_unicode_buffer(size)
+                length = _final_path(handle, buffer, size, 0)
+                if length == 0:
+                    raise ctypes.WinError(ctypes.get_last_error())
+                if length >= size:
+                    size = length + 1
+                    continue
+                name = buffer.value
+                # Preserve UNC roots when removing the extended-path prefix.
+                if name.startswith('\\\\?\\UNC\\'):
+                    return '\\\\' + name[8:]
+                if name.startswith('\\\\?\\'):
+                    return name[4:]
+                return name
     except OSError as error:
         raise PermissionError(f'Test write against an unreadable fd refused: {error}')
     # Refuse descriptors on platforms where their target cannot be named.
@@ -50,6 +79,13 @@ def directory_of(descriptor):
 
 def check_write(path, dir_fd=-1):
     if isinstance(path, int):
+        try:
+            mode = os.fstat(path).st_mode
+        except OSError as error:
+            raise PermissionError(f'Test write against an unreadable fd refused: {error}')
+        # Pipes, sockets and terminal streams do not name filesystem files.
+        if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+            return
         # Read-only opens and descriptors inherited before bootstrap were not
         # checked for writes. Recheck the current target, even for fdopen.
         path = directory_of(path)
