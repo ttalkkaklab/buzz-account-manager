@@ -49,6 +49,7 @@ class WindowsSupportTests(unittest.TestCase):
         self.assertIn('DoDragDrop([string]$sender.Tag,[Windows.Forms.DragDropEffects]::Move)', source)
         self.assertIn("$handle.AccessibleName=L '끌어서 순서 변경'", source)
         self.assertIn("$source.provider -ne $dest.provider) { return }", source)
+        self.assertIn("Move-AccountOrder @($accounts | Where-Object provider -eq $source.provider | ForEach-Object { [string]$_.id }) $dragged $target", source)
         shell = shutil.which('pwsh') or shutil.which('powershell') or shutil.which('powershell.exe')
         if not shell:
             self.skipTest('no PowerShell available to execute App.ps1 logic')

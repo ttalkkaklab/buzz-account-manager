@@ -146,6 +146,9 @@ struct CreatedAccountSelection: Equatable {
     private var pendingCreatedAccount: CreatedAccountSelection?
     @Published var accountFilter = "all"
     @Published var draggingAccount: String?
+    private var orderBeforeDrag: [Account]?
+    private var dragEndWatcher: Timer?
+    private var dragReleaseTicks = 0
     @Published var loginAccount: Account?
     @Published var loginOutput = ""
     @Published var loginRunning = false
@@ -167,7 +170,7 @@ struct CreatedAccountSelection: Equatable {
         }
         monitorTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self = self, !self.busy, !self.loginRunning else { return }
+                guard let self = self, !self.busy, !self.loginRunning, self.draggingAccount == nil else { return }
                 if let data = try? await callBackend("status"), let latest = try? JSONDecoder().decode(Snapshot.self, from: data) {
                     self.snapshot = latest
                     for (id, value) in latest.monitor?.usages ?? [:] {
@@ -214,17 +217,74 @@ struct CreatedAccountSelection: Equatable {
             message = L("계정 정보를 저장했습니다.")
         } catch { self.error = error.localizedDescription }
     }
-    /// Moves the dragged account into the slot of `target` while the drag is still in flight (same service only).
+    /// Starts a handle drag: remembers the order shown so a cancelled drop can restore it, and watches for the mouse release.
+    func beginDrag(_ id: String) -> NSItemProvider? {
+        guard !busy, !loginRunning, draggingAccount == nil, snapshot?.accounts.contains(where: { $0.id == id }) == true else { return nil }
+        draggingAccount = id
+        orderBeforeDrag = snapshot?.accounts
+        dragReleaseTicks = 0
+        #if !TESTING
+        // A drop that lands outside any target never calls performDrop; the released button is the only signal left.
+        let watcher = Timer(timeInterval: 0.15, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.draggingAccount != nil else { return }
+                self.dragReleaseTicks = NSEvent.pressedMouseButtons & 1 == 0 ? self.dragReleaseTicks + 1 : 0
+                if self.dragReleaseTicks >= 3 { self.cancelDrag() }
+            }
+        }
+        RunLoop.main.add(watcher, forMode: .common)
+        dragEndWatcher = watcher
+        #endif
+        return NSItemProvider(object: id as NSString)
+    }
+    /// Moves the dragged account into the slot of `target` while the drag is still in flight.
+    /// Only that service's slots are refilled, so accounts of other services keep their places.
     func moveAccount(_ id: String, over target: String) {
-        guard !busy, !loginRunning, id != target, var accounts = snapshot?.accounts,
-              let from = accounts.firstIndex(where: { $0.id == id }), let to = accounts.firstIndex(where: { $0.id == target }),
-              accounts[from].provider == accounts[to].provider else { return }
-        accounts.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        guard !busy, !loginRunning, id == draggingAccount, id != target, var accounts = snapshot?.accounts,
+              let provider = accounts.first(where: { $0.id == id })?.provider,
+              accounts.first(where: { $0.id == target })?.provider == provider else { return }
+        let slots = accounts.indices.filter { accounts[$0].provider == provider }
+        var group = slots.map { accounts[$0] }
+        guard let from = group.firstIndex(where: { $0.id == id }), let to = group.firstIndex(where: { $0.id == target }) else { return }
+        group.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        for (slot, account) in zip(slots, group) { accounts[slot] = account }
         snapshot?.accounts = accounts
     }
-    /// Persists the order currently shown; a failed save re-reads the backend so the list snaps back.
-    func saveAccountOrder() async {
-        guard !busy, !loginRunning, let ids = snapshot?.accounts.map(\.id), !ids.isEmpty else { return }
+    /// Restores the order shown before the drag and forgets the dragged account.
+    func cancelDrag() {
+        dragEndWatcher?.invalidate()
+        dragEndWatcher = nil
+        guard draggingAccount != nil else { return }
+        draggingAccount = nil
+        if let before = orderBeforeDrag { snapshot?.accounts = before }
+        orderBeforeDrag = nil
+    }
+    /// Commits a drop only when its payload is the account this drag started with; anything else cancels.
+    func commitDrop(_ info: DropInfo) -> Bool {
+        guard let expected = draggingAccount, let item = info.itemProviders(for: [.text]).first else { return false }
+        dragEndWatcher?.invalidate()
+        dragEndWatcher = nil
+        _ = item.loadObject(ofClass: NSString.self) { [weak self] object, _ in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if (object as? String) == expected { self.finishDrag() } else { self.cancelDrag() }
+            }
+        }
+        return true
+    }
+    /// Commits a drop: saves the dragged service's order and clears the drag state. Returns false when no drag was in flight.
+    @discardableResult func finishDrag() -> Bool {
+        dragEndWatcher?.invalidate()
+        dragEndWatcher = nil
+        guard let id = draggingAccount, let provider = snapshot?.accounts.first(where: { $0.id == id })?.provider else { return false }
+        draggingAccount = nil
+        orderBeforeDrag = nil
+        Task { await saveAccountOrder(provider: provider) }
+        return true
+    }
+    /// Persists the order shown for one service; the backend refills only that service's slots. A failed save re-reads the backend so the list snaps back.
+    func saveAccountOrder(provider: String) async {
+        guard !busy, !loginRunning, let ids = snapshot?.accounts.filter({ $0.provider == provider }).map(\.id), !ids.isEmpty else { return }
         busy = true
         defer { busy = false }
         do {
@@ -950,30 +1010,20 @@ struct AgentEditor: View {
 struct AccountDropDelegate: DropDelegate {
     let target: Account
     let app: AppModel
-    func validateDrop(info: DropInfo) -> Bool { app.draggingAccount != nil && !app.busy && !app.loginRunning }
+    func validateDrop(info: DropInfo) -> Bool { app.draggingAccount != nil && info.hasItemsConforming(to: [.text]) && !app.busy && !app.loginRunning }
     func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
     func dropEntered(info: DropInfo) {
-        guard let dragged = app.draggingAccount else { return }
+        guard let dragged = app.draggingAccount, info.hasItemsConforming(to: [.text]) else { return }
         app.moveAccount(dragged, over: target.id)
     }
-    func performDrop(info: DropInfo) -> Bool {
-        guard app.draggingAccount != nil else { return false }
-        app.draggingAccount = nil
-        Task { await app.saveAccountOrder() }
-        return true
-    }
+    func performDrop(info: DropInfo) -> Bool { app.commitDrop(info) }
 }
 /// Catches drops that land between cards so the order shown is what gets saved.
 struct AccountOrderCommitDelegate: DropDelegate {
     let app: AppModel
-    func validateDrop(info: DropInfo) -> Bool { app.draggingAccount != nil }
+    func validateDrop(info: DropInfo) -> Bool { app.draggingAccount != nil && info.hasItemsConforming(to: [.text]) }
     func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-    func performDrop(info: DropInfo) -> Bool {
-        guard app.draggingAccount != nil else { return false }
-        app.draggingAccount = nil
-        Task { await app.saveAccountOrder() }
-        return true
-    }
+    func performDrop(info: DropInfo) -> Bool { app.commitDrop(info) }
 }
 struct AccountsView: View {
     @Environment(\.locale) private var displayLocale
@@ -1019,10 +1069,7 @@ struct AccountsView: View {
                                     .font(.body).foregroundStyle(.tertiary).frame(width: 14, height: 32).contentShape(Rectangle())
                                     .help(L("끌어서 순서 변경")).accessibilityLabel(L("끌어서 순서 변경"))
                                     .accessibilityIdentifier("drag-" + account.id)
-                                    .onDrag {
-                                        if !app.busy && !app.loginRunning { app.draggingAccount = account.id }
-                                        return NSItemProvider(object: account.id as NSString)
-                                    }
+                                    .onDrag { app.beginDrag(account.id) ?? NSItemProvider() }
                                 Image(systemName: account.builtin ? "laptopcomputer" : "person.crop.circle")
                                     .font(.title2).foregroundStyle(.secondary).frame(width: 32)
                                 VStack(alignment: .leading, spacing: 5) {

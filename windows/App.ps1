@@ -184,7 +184,8 @@ function Reorder-Account([string]$dragged,[string]$target) {
  if ($script:logins.Count -or $dragged -eq $target) { return }
  $accounts=@($script:state.accounts); $source=@($accounts | Where-Object id -eq $dragged) | Select-Object -First 1; $dest=@($accounts | Where-Object id -eq $target) | Select-Object -First 1
  if (-not $source -or -not $dest -or $source.provider -ne $dest.provider) { return }
- $order=Move-AccountOrder @($accounts | ForEach-Object { [string]$_.id }) $dragged $target
+ # Only this service's ids travel; the backend refills just the slots they held, so other services keep their places.
+ $order=Move-AccountOrder @($accounts | Where-Object provider -eq $source.provider | ForEach-Object { [string]$_.id }) $dragged $target
  try { $r=Invoke-Backend 'reorder' @{account_ids=@($order)}; Set-Message $r.message; Refresh-State } catch { Show-Error $_.Exception.Message }
 }
 function Enable-AccountDrop($control,[string]$identity) {
