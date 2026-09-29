@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Cross-build an offline Windows x64 installer with Go, NSIS and embedded Python."""
 from pathlib import Path
+import argparse
 import hashlib
 import os
 import shutil
@@ -16,7 +17,23 @@ RESOURCE_FILES = ('backend.py', 'windows_support.py', 'Translations.json')
 POWERSHELL_FILES = ('App.ps1', 'Login.ps1', 'Localization.ps1')
 
 
+def verified_launcher(path, expected):
+    if bool(path) != bool(expected):
+        raise SystemExit('--launcher-file and --launcher-sha256 must be supplied together')
+    if not path:
+        return None
+    data = Path(path).read_bytes()
+    if hashlib.sha256(data).hexdigest() != expected.lower():
+        raise SystemExit('Pinned launcher SHA-256 mismatch')
+    return data
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--launcher-file', help='Reuse a previously verified Windows launcher without recompiling')
+    parser.add_argument('--launcher-sha256', help='Required SHA-256 of the reused launcher')
+    args = parser.parse_args()
+    launcher = verified_launcher(args.launcher_file, args.launcher_sha256)
     BUILD.mkdir(exist_ok=True)
     archive = BUILD / f'python-{VERSION}-embed-amd64.zip'
     if not archive.exists():
@@ -32,9 +49,13 @@ def main():
         z.extractall(runtime)
     # Include the installed backend, never ambient user site-packages or PYTHONPATH.
     (runtime / 'python313._pth').write_text('python313.zip\n.\n..\n', encoding='utf-8')
-    env = dict(os.environ, GOOS='windows', GOARCH='amd64', CGO_ENABLED='0')
-    subprocess.run(['go', 'build', '-trimpath', '-ldflags=-s -w -H=windowsgui',
-                    '-o', str(payload / 'agent-launcher.exe'), str(ROOT / 'windows/launcher.go')], env=env, check=True)
+    if launcher is None:
+        env = dict(os.environ, GOOS='windows', GOARCH='amd64', CGO_ENABLED='0')
+        subprocess.run(['go', 'build', '-trimpath', '-ldflags=-s -w -H=windowsgui',
+                        '-o', str(payload / 'agent-launcher.exe'), str(ROOT / 'windows/launcher.go')], env=env, check=True)
+    else:
+        (payload / 'agent-launcher.exe').write_bytes(launcher)
+    print('Payload launcher SHA-256: ' + hashlib.sha256((payload / 'agent-launcher.exe').read_bytes()).hexdigest())
     shutil.copy2(payload / 'agent-launcher.exe', payload / 'Buzz Account Manager.exe')
     for name in RESOURCE_FILES:
         shutil.copy2(ROOT / 'Resources' / name, payload / name)

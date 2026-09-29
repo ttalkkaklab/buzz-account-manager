@@ -1,4 +1,40 @@
 {
+  "아직 종료되지 않은 에이전트: ": {
+    "en": "Agents still running: ",
+    "vi": "Tác nhân vẫn đang chạy: "
+  },
+  "파일이 사용 중이거나 쓰기 권한이 없어 저장하지 못했습니다. Buzz와 에이전트 실행기를 종료하고 다시 시도하세요.": {
+    "en": "Could not save because a file is in use or write access was denied. Close Buzz and its agent launchers, then try again.",
+    "vi": "Không thể lưu vì tệp đang được sử dụng hoặc bị từ chối quyền ghi. Đóng Buzz và các trình khởi chạy tác nhân rồi thử lại."
+  },
+  "설정을 저장하지 못했습니다.": {
+    "en": "Could not save settings.",
+    "vi": "Không thể lưu cài đặt."
+  },
+  "일부 파일을 복원하지 못했습니다. Buzz를 시작하지 말고 백업을 확인하세요.": {
+    "en": "Some files could not be restored. Check the backup before starting Buzz.",
+    "vi": "Không thể khôi phục một số tệp. Kiểm tra bản sao lưu trước khi khởi động Buzz."
+  },
+  "변경한 파일을 복원했습니다.": {
+    "en": "Changed files were restored.",
+    "vi": "Các tệp đã thay đổi đã được khôi phục."
+  },
+  "파일을 변경하지 않았습니다.": {
+    "en": "No files were changed.",
+    "vi": "Không có tệp nào bị thay đổi."
+  },
+  "파일: ": {
+    "en": "File: ",
+    "vi": "Tệp: "
+  },
+  "백업: ": {
+    "en": "Backup: ",
+    "vi": "Bản sao lưu: "
+  },
+  "복원 실패: ": {
+    "en": "Restore failed: ",
+    "vi": "Khôi phục thất bại: "
+  },
   "설정을 읽지 못했습니다. 다시 시도해 주세요.": {
     "en": "Could not read settings. Please try again.",
     "vi": "Không thể đọc cài đặt. Vui lòng thử lại."

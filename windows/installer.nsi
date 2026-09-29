@@ -37,7 +37,7 @@ FunctionEnd
 Section "Buzz Account Manager" SEC_MAIN
   SetShellVarContext current
   SetOutPath "$INSTDIR"
-  File /r "../build/windows-payload/*"
+  File /r "..\build\windows-payload\*"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\Buzz Account Manager"
   CreateShortcut "$SMPROGRAMS\Buzz Account Manager\Buzz Account Manager.lnk" "$INSTDIR\Buzz Account Manager.exe"

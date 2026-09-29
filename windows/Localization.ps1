@@ -18,6 +18,7 @@ function L([string]$key, [object[]]$values = @()) {
 function Localize-Backend([string]$value) {
     if ([string]::IsNullOrEmpty($value)) { return '' }
     if ($script:language -eq 'ko') { return $value }
+    if ($value.Contains("`n")) { return (($value -split "`n" | ForEach-Object { Localize-Backend $_ }) -join "`n") }
     if ($script:catalog.PSObject.Properties[$value]) { return L $value }
     foreach ($suffix in @(' CLI를 찾지 못했습니다.', ': 사용 가능한 예비 계정이 없습니다.', ': 예비 계정으로 전환했습니다.', ': 지출 한도 도달', ' 크레딧: 무제한')) {
         if ($value.EndsWith($suffix)) { return $value.Substring(0, $value.Length-$suffix.Length) + (L $suffix) }
@@ -25,7 +26,7 @@ function Localize-Backend([string]$value) {
     $credit = ' 크레딧: '
     $index = $value.LastIndexOf($credit, [StringComparison]::Ordinal)
     if ($index -ge 0) { return $value.Substring(0,$index) + (L $credit) + $value.Substring($index+$credit.Length) }
-    foreach ($prefix in @('Buzz 실행 파일을 찾지 못했습니다. Windows용 Buzz를 설치하세요: ', 'CLI 실행 파일을 확인할 수 없습니다. Buzz에서 실행 도구를 다시 설치하세요: ')) {
+    foreach ($prefix in @('파일: ', '백업: ', '복원 실패: ', '아직 종료되지 않은 에이전트: ', 'Buzz 실행 파일을 찾지 못했습니다. Windows용 Buzz를 설치하세요: ', 'CLI 실행 파일을 확인할 수 없습니다. Buzz에서 실행 도구를 다시 설치하세요: ')) {
         if ($value.StartsWith($prefix)) { return (L $prefix) + $value.Substring($prefix.Length) }
     }
     return $value

@@ -183,6 +183,43 @@ def buzz_running():
     return any(row and row[0].lower() == 'buzz-desktop.exe' for row in csv.reader(io.StringIO(result.stdout)))
 
 
+def launcher_processes(root):
+    """Only launchers whose executable resides in this manager's profile root."""
+    script = ("$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process "
+              "-Filter \"Name LIKE 'launch-agent-%.exe'\" | "
+              "Select-Object ProcessId,ExecutablePath | ConvertTo-Json -Compress")
+    encoded = base64.b64encode(script.encode('utf-16le')).decode('ascii')
+    result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+                            capture_output=True, check=True, encoding='utf-8', errors='replace', timeout=15)
+    rows = json.loads(result.stdout.strip() or '[]')
+    rows = [rows] if isinstance(rows, dict) else rows
+    directory = root.resolve()
+    return [row for row in rows if row.get('ExecutablePath')
+            and Path(row['ExecutablePath']).resolve().parent == directory]
+
+
+def check_launcher_replaceable(path):
+    """Read-only preflight; do not terminate processes or change file attributes."""
+    processes = launcher_processes(path.parent)
+    if any(Path(row['ExecutablePath']).resolve() == path.resolve() for row in processes):
+        error = PermissionError('Launcher process is running')
+        error.launcher_count = len(processes)
+        raise error
+    # Also detect non-process handles denying delete sharing. This only requests
+    # access, without renaming/deleting anything; races remain handled by rollback.
+    import ctypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                                  ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+    kernel.CreateFileW.restype = ctypes.c_void_p
+    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel.CloseHandle.restype = ctypes.c_int
+    handle = kernel.CreateFileW(str(path), 0x10000, 7, None, 3, 0, None)  # DELETE, share all, OPEN_EXISTING
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    kernel.CloseHandle(handle)
+
+
 def stop_buzz():
     # Ask the main window to close; never force-kill agents to change accounts.
     script = "Get-Process buzz-desktop -ErrorAction SilentlyContinue | ForEach-Object { [void]$_.CloseMainWindow() }"

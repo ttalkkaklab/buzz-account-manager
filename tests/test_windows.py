@@ -22,6 +22,95 @@ from test_backend import b
 
 
 class WindowsSupportTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows directory junctions')
+    def test_launcher_processes_resolves_junction_paths_before_filtering(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            real = Path(tmp) / 'real'
+            real.mkdir()
+            link = Path(tmp) / 'link'
+            subprocess.run(['cmd.exe', '/d', '/c', 'mklink', '/J', str(link), str(real)],
+                           check=True, capture_output=True)
+            try:
+                name = 'launch-agent-' + 'a' * 64 + '.exe'
+                (real / name).write_bytes(b'fixture')
+                for root in (link, real):
+                    for executable in (link / name, real / name):
+                        with self.subTest(root=root, executable=executable):
+                            expected = {'ProcessId': 123, 'ExecutablePath': str(executable)}
+                            rows = [expected, {'ProcessId': 124, 'ExecutablePath': None},
+                                    {'ProcessId': 125, 'ExecutablePath': str(Path(tmp) / name)}]
+                            with patch.object(win.subprocess, 'run', return_value=SimpleNamespace(
+                                    stdout=json.dumps(rows))) as run:
+                                self.assertEqual(win.launcher_processes(root), [expected])
+                                script = win.base64.b64decode(run.call_args.args[0][-1]).decode('utf-16le')
+                                self.assertNotIn('GetDirectoryName', script)
+                                with self.assertRaises(PermissionError) as error:
+                                    win.check_launcher_replaceable(root / name)
+                                self.assertEqual(error.exception.launcher_count, 1)
+                with patch.object(win.subprocess, 'run', return_value=SimpleNamespace(
+                        stdout=json.dumps(expected))):
+                    self.assertEqual(win.launcher_processes(link), [expected])
+            finally:
+                link.rmdir()
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows save flow runtime')
+    def test_save_waits_for_parent_and_launchers_before_applying(self):
+        shell = shutil.which('pwsh') or shutil.which('powershell') or shutil.which('powershell.exe')
+        if not shell:
+            self.skipTest('no PowerShell available to execute save flow')
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'windows/App.ps1').read_text(encoding='utf-8-sig')
+        logic = source[source.index('function Save-Agent'):source.index('function Card-At')]
+        self.assertIn('AddSeconds(30)', logic)
+        harness = """$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Windows.Forms
+$script:save=[pscustomobject]@{Enabled=$true}; $script:form=[pscustomobject]@{Enabled=$true;UseWaitCursor=$false}
+$script:state=[pscustomobject]@{agents=@([pscustomobject]@{id='test';account_id='a';name='fixture'});revision='r'}
+$script:agentId='test'; $script:fallbacks=@(); $script:assigned=[pscustomobject]@{SelectedItem=[pscustomobject]@{id='a'}}
+$script:provider=[pscustomobject]@{SelectedItem='codex'}; $script:model=[pscustomobject]@{Text='test'}
+$script:effort=[pscustomobject]@{SelectedIndex=-1}; $script:automatic=[pscustomobject]@{Checked=$false}
+$script:fallbackCard=[pscustomobject]@{Visible=$true}; $script:saveMessage=[pscustomobject]@{Text=''}
+function L($x) { return $x }
+function Clear-PendingAccount {}
+function Set-Message {}
+function Refresh-State {}
+function Update-Save {}
+function Show-Error($message) { $script:errorText=$message }
+function Invoke-Backend($action,$body) {
+ $script:calls.Add($action)
+ if ($action -eq 'shutdown-status') { $script:poll++; return $script:statuses[[Math]::Min($script:poll-1,$script:statuses.Count-1)] }
+}
+function Reset-Fixture($statuses) {
+ $script:saving=$false; $script:poll=0; $script:errorText=''; $script:statuses=$statuses
+ $script:calls=New-Object 'Collections.Generic.List[string]'
+}
+"""
+        # Test the production polling logic, then shorten only its deadline for timeout cases.
+        harness += logic + """
+Reset-Fixture @(@{buzz_running=$true;launcher_count=1},@{buzz_running=$false;launcher_count=1},@{buzz_running=$false;launcher_count=0})
+Save-Agent
+$rows=@(@{polls=$script:poll;calls=@($script:calls.ToArray());error=$script:errorText})
+""" + logic.replace('AddSeconds(30)', 'AddSeconds(0)') + """
+Reset-Fixture @(@{buzz_running=$false;launcher_count=1}); Save-Agent
+$rows+=@{polls=$script:poll;calls=@($script:calls.ToArray());error=$script:errorText}
+Reset-Fixture @(@{buzz_running=$true;launcher_count=0}); Save-Agent
+$rows+=@{polls=$script:poll;calls=@($script:calls.ToArray());error=$script:errorText}
+[Console]::OutputEncoding=[Text.Encoding]::UTF8
+ConvertTo-Json -InputObject $rows -Depth 5 -Compress
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / 'wait.ps1'
+            script.write_text(harness, encoding='utf-8-sig')
+            result = subprocess.run([shell, '-NoProfile', '-File', str(script)],
+                                    capture_output=True, text=True, encoding='utf-8', check=True)
+        rows = json.loads(result.stdout.lstrip('\ufeff'))
+        self.assertEqual(rows[0]['polls'], 3)
+        self.assertEqual(rows[0]['calls'], ['validate', 'stop-buzz', 'shutdown-status', 'shutdown-status', 'shutdown-status', 'apply'])
+        self.assertEqual(rows[0]['error'], '')
+        self.assertEqual(rows[1]['calls'][-1], 'apply')  # apply distinguishes unchanged/changed images
+        self.assertNotIn('apply', rows[2]['calls'])
+        self.assertTrue(rows[2]['error'])
+
     def test_windows_translation_keys_have_both_languages(self):
         root = Path(__file__).resolve().parents[1]
         catalog = json.loads((root / 'Resources/Translations.json').read_text(encoding='utf-8'))
@@ -275,6 +364,8 @@ $result=@(
 $script:language='vi'
 $result+=Localize-QuotaLabel '5시간 · 7일'
 $result+=Display-Date '2026-09-27T12:00:00.123456+00:00'
+$script:language='en'
+$result+=Localize-Backend "설정을 저장하지 못했습니다.`n일부 파일을 복원하지 못했습니다. Buzz를 시작하지 말고 백업을 확인하세요.`n복원 실패: agent.json`n파일: store.json`n백업: C:\\backup {0}"
 [Console]::OutputEncoding=[Text.Encoding]::UTF8
 ConvertTo-Json -InputObject $result -Compress
 """
@@ -294,6 +385,7 @@ ConvertTo-Json -InputObject $result -Compress
             self.assertEqual(rows[10], 'unknown untouched')
             self.assertEqual(rows[11], '5 giờ · 7 ngày')
             self.assertNotIn('T12:', rows[12])
+            self.assertEqual(rows[13], 'Could not save settings.\nSome files could not be restored. Check the backup before starting Buzz.\nRestore failed: agent.json\nFile: store.json\nBackup: C:\\backup {0}')
 
     def test_store_uses_roaming_appdata(self):
         with patch.dict(os.environ, {'APPDATA': '/test/한글 user/roaming'}):

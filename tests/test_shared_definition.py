@@ -191,7 +191,8 @@ class SharedDefinitionTests(unittest.TestCase):
         b.write_json(paths[1], dict(pubkey=self.pk, account_ids={'codex': self.accounts[0]['id']}))
         originals = [p.read_bytes() for p in paths]
         with patch.object(b, 'atomic_bytes', side_effect=fail_once):
-            with self.assertRaises(OSError):
+            with self.assertRaises(ValueError) as result:
                 self.save()
+        self.assertIsInstance(result.exception.__cause__, OSError)
         self.assertEqual(self.manager.store.read_bytes(), before)
         self.assertEqual([p.read_bytes() for p in paths], originals)
