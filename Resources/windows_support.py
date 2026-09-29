@@ -194,8 +194,17 @@ def launcher_processes(root):
     rows = json.loads(result.stdout.strip() or '[]')
     rows = [rows] if isinstance(rows, dict) else rows
     directory = root.resolve()
-    return [row for row in rows if row.get('ExecutablePath')
-            and Path(row['ExecutablePath']).resolve().parent == directory]
+    matches = []
+    for row in rows:
+        if not row.get('ExecutablePath'):
+            continue
+        executable = Path(row['ExecutablePath'])
+        if executable.parent == root or executable.parent == directory:
+            matches.append(row)
+        # Check locally before resolving aliases: unrelated UNC paths can block.
+        elif (root / executable.name).exists() and executable.resolve().parent == directory:
+            matches.append(row)
+    return matches
 
 
 def check_launcher_replaceable(path):
