@@ -51,7 +51,13 @@ def directory_of(descriptor):
             raw = fcntl.fcntl(descriptor, getattr(fcntl, 'F_GETPATH', 50), bytes(1024))
             return os.fsdecode(raw.split(b'\0', 1)[0])
         if sys.platform.startswith('linux'):
-            return os.readlink(f'/proc/self/fd/{descriptor}')
+            name = os.readlink(f'/proc/self/fd/{descriptor}')
+            # procfs also returns non-path labels: pipe:[...], socket:[...],
+            # and anon_inode:... . Only absolute names identify filesystem nodes.
+            # Mocked Linux tests retain the host's os.path (ntpath on Windows).
+            if not name.startswith('/'):
+                raise OSError('descriptor has no filesystem path')
+            return name
         if sys.platform == 'win32':
             handle = msvcrt.get_osfhandle(descriptor)
             size = 32768
@@ -83,12 +89,20 @@ def check_write(path, dir_fd=-1):
             mode = os.fstat(path).st_mode
         except OSError as error:
             raise PermissionError(f'Test write against an unreadable fd refused: {error}')
-        # Pipes, sockets and terminal streams do not name filesystem files.
-        if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+        # Named special files need the same boundary check as regular files.
+        # Only unnameable special descriptors (pipes/sockets) may pass.
+        try:
+            path = directory_of(path)
+        except PermissionError:
+            if stat.S_ISREG(mode) or stat.S_ISDIR(mode):
+                raise
             return
-        # Read-only opens and descriptors inherited before bootstrap were not
-        # checked for writes. Recheck the current target, even for fdopen.
-        path = directory_of(path)
+        if stat.S_ISLNK(mode):
+            # chmod on O_SYMLINK mutates the link itself, not its referent.
+            link = Path(path)
+            location = link.parent.resolve() / link.name
+            if not location.is_relative_to(ROOT):
+                raise PermissionError(f'Test write outside sandbox refused: {location}')
     name = os.fsdecode(path)
     if name == os.devnull:
         raise PermissionError('Test mutation of the null device refused')
@@ -135,3 +149,19 @@ def _audit(event, args):
 
 
 sys.addaudithook(_audit)
+
+# CPython 3.14 emits no audit events for these creation APIs. Keep their
+# signatures and native exceptions, and check before invoking the originals.
+_original_mkfifo = getattr(os, 'mkfifo', None)
+if _original_mkfifo is not None:
+    def _mkfifo(path, mode=0o666, *, dir_fd=None):
+        check_write(path, dir_fd)
+        return _original_mkfifo(path, mode, dir_fd=dir_fd)
+    os.mkfifo = _mkfifo
+
+_original_mknod = getattr(os, 'mknod', None)
+if _original_mknod is not None:
+    def _mknod(path, mode=0o600, device=0, *, dir_fd=None):
+        check_write(path, dir_fd)
+        return _original_mknod(path, mode, device, dir_fd=dir_fd)
+    os.mknod = _mknod

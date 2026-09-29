@@ -17,7 +17,11 @@ removal, truncation, permission changes, symbolic and hard links, and the Window
 `CopyFile2` fast path outside that sandbox, including an accidentally restored
 APPDATA. Relative names given against a directory descriptor, as `shutil.rmtree`
 does on POSIX, are resolved through that descriptor, and refused when the platform
-cannot name it.
+cannot name it. Unnameable non-regular descriptors such as anonymous pipes
+and sockets are allowed; named descriptors are checked against the sandbox.
+`os.mkfifo` and `os.mknod` emit no audit events in Python 3.14, so wrappers
+check their creation paths instead. References captured before importing
+`sandbox` (for example, `from os import mkfifo`) bypass these wrappers.
 This guards accidental Python writes; it does not sandbox arbitrary subprocesses.
 Keep subprocess fixtures isolated and mock live process/task operations.
 
