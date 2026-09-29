@@ -22,6 +22,25 @@ from test_backend import b
 
 
 class WindowsSupportTests(unittest.TestCase):
+    def test_launcher_processes_skips_unrelated_unc_without_resolving(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            directory = root.resolve()
+            expected = {'ProcessId': 123, 'ExecutablePath': str(root / 'launch-agent-local.exe')}
+            rows = [expected, {'ProcessId': 124, 'ExecutablePath': None},
+                    {'ProcessId': 125, 'ExecutablePath': '//unreachable/nosuch/launch-agent-other.exe'}]
+            resolved = []
+
+            def resolve_local(path, *args, **kwargs):
+                resolved.append(path)
+                self.assertEqual(path, root, 'Unrelated executable must not be resolved')
+                return directory
+
+            with patch.object(win.subprocess, 'run', return_value=SimpleNamespace(stdout=json.dumps(rows))), \
+                    patch.object(Path, 'resolve', resolve_local):
+                self.assertEqual(win.launcher_processes(root), [expected])
+            self.assertEqual(resolved, [root])
+
     @unittest.skipUnless(os.name == 'nt', 'Windows directory junctions')
     def test_launcher_processes_resolves_junction_paths_before_filtering(self):
         with tempfile.TemporaryDirectory() as tmp:
