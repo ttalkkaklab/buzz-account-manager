@@ -50,3 +50,11 @@ python3 windows/build.py
 ```
 
 빌드 스크립트는 Python 공식 사이트에서 고정 버전의 Windows embeddable package를 받고 SHA-256을 검사합니다. Python 라이선스는 설치 폴더의 `runtime/LICENSE.txt`에 있습니다.
+
+스마트 앱 컨트롤이 허용한 기존 실행기를 유지하는 배포에서는 아래처럼 검증한 파일과 전체 SHA-256을 함께 지정하세요. 이 경로는 Go 재컴파일 없이 동일 바이트를 두 실행 파일에 넣으며, 해시 불일치 시 패키징 전에 중단합니다. 옵션을 생략하면 기존처럼 새로 컴파일합니다.
+
+```sh
+python3 windows/build.py --launcher-file /path/to/verified/agent-launcher.exe --launcher-sha256 FULL_SHA256
+```
+
+빌드 로그의 payload 해시를 확인하고, 설치 뒤 격리 저장으로 생성한 실행기를 실제 실행하여 CodeIntegrity 3077/3118 차단 여부를 확인하세요. 기존 파일의 허용 이력은 다른 PC나 이후 정책에서도 허용됨을 보장하지 않습니다. 실행기 소스 변경이 필요한 배포에는 이전 바이너리를 재사용하지 마세요.
