@@ -22,6 +22,37 @@ from test_backend import b
 
 
 class WindowsSupportTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows directory junctions')
+    def test_launcher_processes_resolves_junction_paths_before_filtering(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            real = Path(tmp) / 'real'
+            real.mkdir()
+            link = Path(tmp) / 'link'
+            subprocess.run(['cmd.exe', '/d', '/c', 'mklink', '/J', str(link), str(real)],
+                           check=True, capture_output=True)
+            try:
+                name = 'launch-agent-' + 'a' * 64 + '.exe'
+                (real / name).write_bytes(b'fixture')
+                for root in (link, real):
+                    for executable in (link / name, real / name):
+                        with self.subTest(root=root, executable=executable):
+                            expected = {'ProcessId': 123, 'ExecutablePath': str(executable)}
+                            rows = [expected, {'ProcessId': 124, 'ExecutablePath': None},
+                                    {'ProcessId': 125, 'ExecutablePath': str(Path(tmp) / name)}]
+                            with patch.object(win.subprocess, 'run', return_value=SimpleNamespace(
+                                    stdout=json.dumps(rows))) as run:
+                                self.assertEqual(win.launcher_processes(root), [expected])
+                                script = win.base64.b64decode(run.call_args.args[0][-1]).decode('utf-16le')
+                                self.assertNotIn('GetDirectoryName', script)
+                                with self.assertRaises(PermissionError) as error:
+                                    win.check_launcher_replaceable(root / name)
+                                self.assertEqual(error.exception.launcher_count, 1)
+                with patch.object(win.subprocess, 'run', return_value=SimpleNamespace(
+                        stdout=json.dumps(expected))):
+                    self.assertEqual(win.launcher_processes(link), [expected])
+            finally:
+                link.rmdir()
+
     @unittest.skipUnless(os.name == 'nt', 'Windows save flow runtime')
     def test_save_waits_for_parent_and_launchers_before_applying(self):
         shell = shutil.which('pwsh') or shutil.which('powershell') or shutil.which('powershell.exe')

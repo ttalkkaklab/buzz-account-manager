@@ -185,16 +185,17 @@ def buzz_running():
 
 def launcher_processes(root):
     """Only launchers whose executable resides in this manager's profile root."""
-    directory = str(root.resolve()).replace("'", "''")
     script = ("$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process "
-              "-Filter \"Name LIKE 'launch-agent-%.exe'\" | Where-Object { "
-              "$_.ExecutablePath -and [IO.Path]::GetDirectoryName($_.ExecutablePath) -eq '" + directory +
-              "' } | Select-Object ProcessId,ExecutablePath | ConvertTo-Json -Compress")
+              "-Filter \"Name LIKE 'launch-agent-%.exe'\" | "
+              "Select-Object ProcessId,ExecutablePath | ConvertTo-Json -Compress")
     encoded = base64.b64encode(script.encode('utf-16le')).decode('ascii')
     result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
                             capture_output=True, check=True, encoding='utf-8', errors='replace', timeout=15)
     rows = json.loads(result.stdout.strip() or '[]')
-    return [rows] if isinstance(rows, dict) else rows
+    rows = [rows] if isinstance(rows, dict) else rows
+    directory = root.resolve()
+    return [row for row in rows if row.get('ExecutablePath')
+            and Path(row['ExecutablePath']).resolve().parent == directory]
 
 
 def check_launcher_replaceable(path):
