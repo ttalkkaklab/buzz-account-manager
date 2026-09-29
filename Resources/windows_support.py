@@ -200,7 +200,7 @@ def launcher_processes(root):
 def check_launcher_replaceable(path):
     """Read-only preflight; do not terminate processes or change file attributes."""
     processes = launcher_processes(path.parent)
-    if any(Path(row['ExecutablePath']) == path for row in processes):
+    if any(Path(row['ExecutablePath']).resolve() == path.resolve() for row in processes):
         error = PermissionError('Launcher process is running')
         error.launcher_count = len(processes)
         raise error

@@ -973,7 +973,7 @@ class Manager:
                             atomic_bytes(path, old, mode)
                     except Exception:
                         restore_errors.append(path.name)
-                raise ValueError(self.save_error(error, update[0], backups, restore_errors, restored=True)) from error
+                raise ValueError(self.save_error(error, update[0], backups, restore_errors, restored=bool(applied))) from error
             # Verify fresh disk bytes, not the object we just serialized. A
             # mismatch may be another writer: retain its data and our backups,
             # rather than rolling that newer store back over the other writer.

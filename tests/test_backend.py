@@ -448,6 +448,33 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(self.manager.store.read_bytes(), raw)
         self.assertFalse((self.manager.root / ('agent-' + self.pk + '.json')).exists())
 
+    def test_first_payload_write_failure_reports_no_changes(self):
+        backend = self.manager.root / 'manager-backend.py'
+        backend.write_bytes(b'previous backend')
+        originals = {p: p.read_bytes() for p in self.manager.root.iterdir() if p.is_file()}
+        raw = self.manager.store.read_bytes()
+        original = b.atomic_bytes
+        failure = PermissionError('private fixture detail')
+        payload_attempts = []
+
+        def fail_first_payload(path, data, mode=0o600):
+            if path.parent == self.manager.root or path == self.manager.store:
+                payload_attempts.append(path)
+                raise failure
+            return original(path, data, mode)
+
+        with patch.object(b, 'atomic_bytes', side_effect=fail_first_payload):
+            with self.assertRaisesRegex(ValueError, '파일을 변경하지 않았습니다') as result:
+                self.manager.apply(self.request())
+        self.assertIs(result.exception.__cause__, failure)
+        self.assertNotIn('변경한 파일을 복원했습니다', str(result.exception))
+        self.assertNotIn('private fixture detail', str(result.exception))
+        self.assertEqual(payload_attempts, [backend])
+        self.assertEqual(self.manager.store.read_bytes(), raw)
+        # Acquiring the save lock creates .manager.lock before payload writes.
+        self.assertEqual({p: p.read_bytes() for p in self.manager.root.iterdir()
+                          if p.is_file() and p.name != '.manager.lock'}, originals)
+
     def test_rollback_continues_after_restore_failure_and_skips_unwritten_files(self):
         backend = self.manager.root / 'manager-backend.py'
         profile = self.manager.root / ('agent-' + self.pk + '.json')

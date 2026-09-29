@@ -43,7 +43,7 @@ Buzz를 다른 드라이브에 설치했다면 설치 프로그램이 기록한 
 
 ## 소스에서 빌드
 
-macOS 빌드 도구: Python 3, Go, NSIS (`brew install makensis`).
+검증한 설치 프로그램 빌드 호스트: Windows 11 x64 (빌드 26200), Python 3, Windows용 NSIS 3.13 (`makensis.exe /VERSION` → `v3.13`). 새 실행기를 컴파일할 때는 Go도 필요합니다. `makensis.exe`가 있는 폴더를 PATH에 추가하세요. 현재 NSIS 스크립트의 macOS 패키징은 미검증입니다.
 
 ```sh
 python3 windows/build.py
