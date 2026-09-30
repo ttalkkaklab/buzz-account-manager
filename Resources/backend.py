@@ -36,14 +36,19 @@ import urllib.parse
 LAUNCH_PYTHON = sys.executable if os.name == 'nt' else '/usr/bin/python3'
 # Rollout gate: keep dry-run enabled until both machines' candidate lists are reviewed.
 BACKUP_KEEP_COUNT = 100
+BACKUP_KEEP_DAYS = 7
 BACKUP_PRUNE_DRY_RUN = True
 BACKUP_NAME = re.compile(r'[0-9]{8}-[0-9]{6}-[0-9a-f]{6}')
 
 
-def prune_backups(root, *, keep=BACKUP_KEEP_COUNT, dry_run=True, protected=None):
+def prune_backups(root, *, keep=BACKUP_KEEP_COUNT, days=BACKUP_KEEP_DAYS, dry_run=True, protected=None, now=None):
     """Bound automatic save backups; never follow links or touch named backups."""
     if type(keep) is not int or keep < 1:
         raise ValueError('Backup retention must be a positive integer.')
+    if type(days) is not int or days < 0:
+        raise ValueError('Backup retention days must be a nonnegative integer.')
+    now = now or datetime.datetime.now()
+    cutoff = now - datetime.timedelta(days=days)
     root = Path(root)
     if root.is_symlink():
         raise ValueError('Backup directory must not be a symbolic link.')
@@ -53,7 +58,15 @@ def prune_backups(root, *, keep=BACKUP_KEEP_COUNT, dry_run=True, protected=None)
         if entry.is_symlink() or (hasattr(entry, 'is_junction') and entry.is_junction()):
             excluded.append(entry.name)
         elif entry.is_dir():
-            (candidates if BACKUP_NAME.fullmatch(entry.name) else excluded).append(entry.name)
+            if BACKUP_NAME.fullmatch(entry.name):
+                try:
+                    datetime.datetime.strptime(entry.name[:15], '%Y%m%d-%H%M%S')
+                except ValueError:
+                    excluded.append(entry.name)
+                else:
+                    candidates.append(entry.name)
+            else:
+                excluded.append(entry.name)
     candidates.sort(reverse=True)
     # The just-written backup wins timestamp ties (the suffix is random).
     protected_name = Path(protected).name if protected is not None else None
@@ -64,6 +77,11 @@ def prune_backups(root, *, keep=BACKUP_KEEP_COUNT, dry_run=True, protected=None)
         if len(retained) >= keep:
             break
         retained.add(name)
+    retained_by_count = len(retained)
+    recent = {name for name in candidates
+              if datetime.datetime.strptime(name[:15], '%Y%m%d-%H%M%S') >= cutoff}
+    retained_by_days_extra = len(recent - retained)
+    retained.update(recent)
     planned = [name for name in reversed(candidates) if name not in retained]
     deleted, failed = [], []
     if not dry_run:
@@ -78,7 +96,8 @@ def prune_backups(root, *, keep=BACKUP_KEEP_COUNT, dry_run=True, protected=None)
                 deleted.append(name)
             except OSError:
                 failed.append(name)
-    result = dict(dry_run=dry_run, keep=keep, candidates=planned,
+    result = dict(dry_run=dry_run, keep=keep, days=days, as_of=now.isoformat(), candidates=planned,
+                  retained_by_count=retained_by_count, retained_by_days_extra=retained_by_days_extra,
                   deleted=len(deleted), retained=len(candidates) - len(deleted),
                   retained_after_prune=len(retained), excluded_named=len(excluded),
                   excluded=sorted(excluded), failed=failed)
