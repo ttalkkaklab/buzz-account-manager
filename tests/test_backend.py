@@ -432,6 +432,32 @@ class ManagerTests(unittest.TestCase):
         with patch.dict(os.environ, env, clear=True), capture_launch(b) as execute:
             launch(self, self.manager, 'agent-' + self.pk, [])
             self.assertNotIn('model_reasoning_effort', json.loads(execute.call_args.args[2]['CODEX_CONFIG']))
+    def test_pruning_runs_after_successful_verification_in_dry_run(self):
+        verify = self.manager.verify_account_pin
+        calls = []
+        def verified(*args):
+            verify(*args)
+            calls.append('verified')
+        def pruned(*args, **kwargs):
+            self.assertEqual(calls, ['verified'])
+            self.assertTrue(kwargs['dry_run'])
+            self.assertTrue(kwargs['protected'].is_dir())
+            calls.append('pruned')
+        with patch.object(self.manager, 'verify_account_pin', side_effect=verified), patch.object(b, 'prune_backups', side_effect=pruned):
+            self.manager.apply(self.request())
+        self.assertEqual(calls, ['verified', 'pruned'])
+
+    def test_failed_verification_does_not_prune(self):
+        with patch.object(self.manager, 'verify_account_pin', side_effect=ValueError('fixture')), patch.object(b, 'prune_backups') as prune:
+            with self.assertRaises(ValueError):
+                self.manager.apply(self.request())
+            prune.assert_not_called()
+
+    def test_pruning_io_failure_does_not_fail_saved_settings(self):
+        with patch.object(b, 'prune_backups', side_effect=OSError('fixture')):
+            result = self.manager.apply(self.request())
+        self.assertTrue(Path(result['backup']).is_dir())
+
     def test_failed_write_rolls_back(self):
         raw = self.manager.store.read_bytes()
         original = b.atomic_bytes
@@ -442,8 +468,9 @@ class ManagerTests(unittest.TestCase):
                 failed = True
                 raise OSError('test failure')
             return original(path, data, mode)
-        with patch.object(b, 'atomic_bytes', side_effect=fail_once):
+        with patch.object(b, 'atomic_bytes', side_effect=fail_once), patch.object(b, 'prune_backups') as prune:
             with self.assertRaises(ValueError) as result:self.manager.apply(self.request())
+            prune.assert_not_called()
         self.assertIsInstance(result.exception.__cause__, OSError)
         self.assertEqual(self.manager.store.read_bytes(), raw)
         self.assertFalse((self.manager.root / ('agent-' + self.pk + '.json')).exists())
