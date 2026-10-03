@@ -432,7 +432,7 @@ class ManagerTests(unittest.TestCase):
         with patch.dict(os.environ, env, clear=True), capture_launch(b) as execute:
             launch(self, self.manager, 'agent-' + self.pk, [])
             self.assertNotIn('model_reasoning_effort', json.loads(execute.call_args.args[2]['CODEX_CONFIG']))
-    def test_pruning_runs_after_successful_verification_in_dry_run(self):
+    def test_pruning_runs_after_successful_verification_with_deletion_enabled(self):
         verify = self.manager.verify_account_pin
         calls = []
         def verified(*args):
@@ -440,7 +440,7 @@ class ManagerTests(unittest.TestCase):
             calls.append('verified')
         def pruned(*args, **kwargs):
             self.assertEqual(calls, ['verified'])
-            self.assertTrue(kwargs['dry_run'])
+            self.assertFalse(kwargs['dry_run'])
             self.assertTrue(kwargs['protected'].is_dir())
             calls.append('pruned')
         with patch.object(self.manager, 'verify_account_pin', side_effect=verified), patch.object(b, 'prune_backups', side_effect=pruned):
