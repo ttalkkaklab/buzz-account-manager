@@ -34,6 +34,77 @@ import urllib.parse
 # Baked into generated launchers and the monitor LaunchAgent. On macOS sys.executable points at a
 # Homebrew or Command Line Tools python; both move on upgrade. /usr/bin/python3 is a stable OS shim.
 LAUNCH_PYTHON = sys.executable if os.name == 'nt' else '/usr/bin/python3'
+# Rollout gate: keep dry-run enabled until both machines' candidate lists are reviewed.
+BACKUP_KEEP_COUNT = 100
+BACKUP_KEEP_DAYS = 7
+BACKUP_PRUNE_DRY_RUN = True
+BACKUP_NAME = re.compile(r'[0-9]{8}-[0-9]{6}-[0-9a-f]{6}')
+
+
+def prune_backups(root, *, keep=BACKUP_KEEP_COUNT, days=BACKUP_KEEP_DAYS, dry_run=True, protected=None, now=None):
+    """Bound automatic save backups; never follow links or touch named backups."""
+    if type(keep) is not int or keep < 1:
+        raise ValueError('Backup retention must be a positive integer.')
+    if type(days) is not int or days < 0:
+        raise ValueError('Backup retention days must be a nonnegative integer.')
+    now = now or datetime.datetime.now()
+    cutoff = now - datetime.timedelta(days=days)
+    root = Path(root)
+    if root.is_symlink():
+        raise ValueError('Backup directory must not be a symbolic link.')
+    entries = list(root.iterdir()) if root.exists() else []
+    candidates, excluded = [], []
+    for entry in entries:
+        if entry.is_symlink() or (hasattr(entry, 'is_junction') and entry.is_junction()):
+            excluded.append(entry.name)
+        elif entry.is_dir():
+            if BACKUP_NAME.fullmatch(entry.name):
+                try:
+                    datetime.datetime.strptime(entry.name[:15], '%Y%m%d-%H%M%S')
+                except ValueError:
+                    excluded.append(entry.name)
+                else:
+                    candidates.append(entry.name)
+            else:
+                excluded.append(entry.name)
+    candidates.sort(reverse=True)
+    # The just-written backup wins timestamp ties (the suffix is random).
+    protected_name = Path(protected).name if protected is not None else None
+    retained = set(candidates[:1])
+    if protected_name in candidates:
+        retained.add(protected_name)
+    for name in candidates:
+        if len(retained) >= keep:
+            break
+        retained.add(name)
+    retained_by_count = len(retained)
+    recent = {name for name in candidates
+              if datetime.datetime.strptime(name[:15], '%Y%m%d-%H%M%S') >= cutoff}
+    retained_by_days_extra = len(recent - retained)
+    retained.update(recent)
+    planned = [name for name in reversed(candidates) if name not in retained]
+    deleted, failed = [], []
+    if not dry_run:
+        for name in planned:
+            path = root / name
+            try:
+                # Recheck directory links immediately before destructive traversal.
+                if path.is_symlink() or (hasattr(path, 'is_junction') and path.is_junction()):
+                    failed.append(name)
+                    continue
+                shutil.rmtree(path)
+                deleted.append(name)
+            except OSError:
+                failed.append(name)
+    result = dict(dry_run=dry_run, keep=keep, days=days, as_of=now.isoformat(), candidates=planned,
+                  retained_by_count=retained_by_count, retained_by_days_extra=retained_by_days_extra,
+                  deleted=len(deleted), retained=len(candidates) - len(deleted),
+                  retained_after_prune=len(retained), excluded_named=len(excluded),
+                  excluded=sorted(excluded), failed=failed)
+    print('backup-pruning ' + json.dumps(result, sort_keys=True), file=sys.stderr)
+    return result
+
+
 PROVIDERS = ('codex', 'claude', 'grok', 'ollama')
 CLI_COMMAND = {'codex': 'codex-acp', 'claude': 'claude-agent-acp', 'grok': 'grok', 'ollama': 'claude-agent-acp'}
 ALL_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max', 'ultra')
@@ -978,6 +1049,11 @@ class Manager:
             # mismatch may be another writer: retain its data and our backups,
             # rather than rolling that newer store back over the other writer.
             self.verify_account_pin(target['pubkey'], target.get('persona_id'), launcher)
+            try:
+                prune_backups(backups.parent, dry_run=BACKUP_PRUNE_DRY_RUN, protected=backups)
+            except (OSError, ValueError):
+                # Maintenance cannot turn a successfully committed save into a failure.
+                print('backup-pruning: skipped (directory unavailable or unsafe)', file=sys.stderr)
             return {'message': '설정을 저장했습니다.', 'backup': str(backups)}
 
     @staticmethod
@@ -1229,8 +1305,13 @@ class Manager:
 
 
 def main():
-    manager = Manager()
     action = sys.argv[1]
+    if action == 'backup-prune-preview':
+        # Read-only preview: do not initialize Manager or create any runtime files.
+        root = Path(sys.argv[2]) if len(sys.argv) > 2 else Path.home() / '.config/buzz-agents/backups'
+        print(json.dumps(prune_backups(root, dry_run=True), ensure_ascii=False))
+        return
+    manager = Manager()
     req = json.load(sys.stdin) if action in ('create', 'update', 'delete', 'restore', 'reorder', 'apply', 'validate', 'usage') else {}
     if action == 'install-monitor':
         result = manager.install_monitor()
