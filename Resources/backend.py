@@ -34,10 +34,10 @@ import urllib.parse
 # Baked into generated launchers and the monitor LaunchAgent. On macOS sys.executable points at a
 # Homebrew or Command Line Tools python; both move on upgrade. /usr/bin/python3 is a stable OS shim.
 LAUNCH_PYTHON = sys.executable if os.name == 'nt' else '/usr/bin/python3'
-# Rollout gate: keep dry-run enabled until both machines' candidate lists are reviewed.
+# Save-time pruning is enabled; backup-prune-preview always remains read-only.
 BACKUP_KEEP_COUNT = 100
 BACKUP_KEEP_DAYS = 7
-BACKUP_PRUNE_DRY_RUN = True
+BACKUP_PRUNE_DRY_RUN = False
 BACKUP_NAME = re.compile(r'[0-9]{8}-[0-9]{6}-[0-9a-f]{6}')
 
 
