@@ -759,8 +759,15 @@ struct AgentEditor: View {
     var account: Account? { accounts.first { $0.id == accountID } }
     var choices: [ModelChoice] { account?.models ?? accounts.first?.models ?? [] }
     var efforts: [String] {
-        if provider == "ollama" { return [] }
-        return choices.first(where: { $0.id == model })?.efforts ?? ["low", "medium", "high", "xhigh", "max", "ultra"]
+        if account?.isServer == true || provider == "ollama" { return [] }
+        if let known = choices.first(where: { $0.id == model.trimmingCharacters(in: .whitespacesAndNewlines) }) { return known.efforts }
+        return provider == "claude" ? ["low", "medium", "high", "xhigh", "max"] : ["low", "medium", "high", "xhigh", "max", "ultra"]
+    }
+    var modelSource: String {
+        if provider == "ollama" { return L("Ollama 설치 모델") }
+        if account?.isLocalCodex == true { return L("서버에 설치된 로컬 모델을 선택하세요.") }
+        if provider == "claude" { return L("모델 버전 · CLI 별칭") }
+        return provider == "codex" ? L("공식 모델 + CLI 캐시") : L("로컬 모델 캐시")
     }
     var hasChanges: Bool {
         provider != agent.provider || accountID != agent.account_id || model != agent.model || effort != agent.effort
@@ -878,7 +885,7 @@ struct AgentEditor: View {
                 HStack {
                     Toggle(L("모델 ID 직접 입력"), isOn: $customModel).toggleStyle(.checkbox).disabled(provider == "ollama")
                     Spacer()
-                    Text(provider == "ollama" ? L("Ollama 설치 모델") : provider == "claude" ? L("CLI 모델 별칭") : L("로컬 모델 캐시")).font(.caption).foregroundStyle(
+                    Text(modelSource).font(.caption).foregroundStyle(
                         .tertiary)
                 }
                 .onChange(of: customModel) { _, custom in
