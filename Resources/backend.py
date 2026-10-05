@@ -109,6 +109,46 @@ PROVIDERS = ('codex', 'claude', 'grok', 'ollama')
 CLI_COMMAND = {'codex': 'codex-acp', 'claude': 'claude-agent-acp', 'grok': 'grok', 'ollama': 'claude-agent-acp'}
 ALL_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max', 'ultra')
 CLAUDE_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+# Offline picker suggestions, verified 2026-10-05. These are not an access allowlist.
+# https://learn.chatgpt.com/docs/models
+# https://code.claude.com/docs/en/model-config
+# https://support.claude.com/en/articles/11940350-claude-code-model-configuration
+CODEX_MODELS = (
+    ('gpt-6.1-sol', 'GPT-6.1 Sol', ALL_EFFORTS, 'low'),
+    ('gpt-6-astra', 'GPT-6 Astra', ALL_EFFORTS, 'low'),
+    ('gpt-6-sol', 'GPT-6 Sol', ALL_EFFORTS, 'medium'),
+    ('gpt-6-luna', 'GPT-6 Luna', ALL_EFFORTS[:-1], 'high'),
+    ('gpt-5.6-sol', 'GPT-5.6 Sol', ALL_EFFORTS, 'low'),
+    ('gpt-5.6-terra', 'GPT-5.6 Terra', ALL_EFFORTS, 'medium'),
+    ('gpt-5.6-luna', 'GPT-5.6 Luna', ALL_EFFORTS[:-1], 'medium'),
+    ('gpt-5.5', 'GPT-5.5', ALL_EFFORTS[:4], 'medium'),
+)
+CLAUDE_MODELS = (
+    ('fable', 'Fable', CLAUDE_EFFORTS, ''),
+    ('opus', 'Opus', CLAUDE_EFFORTS, ''),
+    ('sonnet', 'Sonnet', CLAUDE_EFFORTS, ''),
+    ('haiku', 'Haiku', (), ''),
+    ('best', 'Best', CLAUDE_EFFORTS, ''),
+    ('default', 'Default', CLAUDE_EFFORTS, ''),
+    ('opusplan', 'Opus Plan', CLAUDE_EFFORTS, ''),
+    ('fable[1m]', 'Fable (1M)', CLAUDE_EFFORTS, ''),
+    ('opus[1m]', 'Opus (1M)', CLAUDE_EFFORTS, ''),
+    ('sonnet[1m]', 'Sonnet (1M)', CLAUDE_EFFORTS, ''),
+    ('claude-fable-5-1', 'Claude Fable 5.1', CLAUDE_EFFORTS, 'high'),
+    ('claude-opus-5-5', 'Claude Opus 5.5', CLAUDE_EFFORTS, 'medium'),
+    ('claude-sonnet-5-5', 'Claude Sonnet 5.5', CLAUDE_EFFORTS, 'medium'),
+    ('claude-fable-5', 'Claude Fable 5', CLAUDE_EFFORTS, 'high'),
+    ('claude-opus-5', 'Claude Opus 5', CLAUDE_EFFORTS, 'high'),
+    ('claude-sonnet-5', 'Claude Sonnet 5', CLAUDE_EFFORTS, 'high'),
+    ('claude-opus-4-8', 'Claude Opus 4.8', CLAUDE_EFFORTS, 'high'),
+    ('claude-opus-4-7', 'Claude Opus 4.7', CLAUDE_EFFORTS, 'xhigh'),
+    ('claude-opus-4-6', 'Claude Opus 4.6', ('low', 'medium', 'high', 'max'), 'high'),
+    ('claude-sonnet-4-6', 'Claude Sonnet 4.6', ('low', 'medium', 'high', 'max'), 'high'),
+    ('claude-opus-4-5-20251101', 'Claude Opus 4.5', (), ''),
+    ('claude-sonnet-4-5-20250929', 'Claude Sonnet 4.5', (), ''),
+    ('claude-haiku-4-5-20251001', 'Claude Haiku 4.5', (), ''),
+    ('claude-haiku-4-5', 'Claude Haiku 4.5', (), ''),
+)
 AUTH_OVERRIDES = (
     'OPENAI_API_KEY', 'OPENAI_API_KEY_FILE', 'OPENAI_BASE_URL', 'OPENAI_API_BASE',
     'CODEX_API_KEY', 'CODEX_API_KEY_FILE', 'OPENAI_ORGANIZATION', 'OPENAI_ORG_ID',
@@ -530,16 +570,48 @@ class Manager:
             if account is None:
                 account = next((a for a in self.accounts() if a['id'] == 'default-ollama'), None)
             return self.ollama_models(account) if account else []
+        if provider == 'claude':
+            return [dict(id=m, name=n, efforts=list(levels), default_effort=default)
+                    for m, n, levels, default in CLAUDE_MODELS]
         homes = [Path(home)] if home else []
         homes.append(self.home / ('.' + provider))
+        if provider == 'codex':
+            catalog = {m: dict(id=m, name=n, efforts=list(levels), default_effort=default)
+                       for m, n, levels, default in CODEX_MODELS}
+            seen = set()
+            # Merge both caches: an old account cache must not hide newer default-CLI models.
+            # Account-specific metadata wins; malformed entries do not discard valid siblings.
+            for folder in dict.fromkeys(homes):
+                try:
+                    data = read_json(folder / 'models_cache.json', {})
+                except (OSError, ValueError):
+                    continue
+                rows = data.get('models') if isinstance(data, dict) else None
+                if not isinstance(rows, list):
+                    continue
+                for row in rows:
+                    if not isinstance(row, dict) or row.get('visibility') == 'hide':
+                        continue
+                    model = row.get('slug')
+                    if (not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9_.:/\[\]-]{1,180}', model)
+                            or model in seen):
+                        continue
+                    previous = catalog.get(model, dict(id=model, name=model, efforts=list(ALL_EFFORTS), default_effort=''))
+                    levels = row.get('supported_reasoning_levels')
+                    if not isinstance(levels, list) or any(
+                            not isinstance(e, dict) or e.get('effort') not in ALL_EFFORTS for e in levels):
+                        levels = previous['efforts']
+                    else:
+                        levels = list(dict.fromkeys(e['effort'] for e in levels))
+                    default = row.get('default_reasoning_level', previous['default_effort'])
+                    name = row.get('display_name')
+                    catalog[model] = dict(id=model, name=name if isinstance(name, str) and name else previous['name'],
+                                          efforts=levels, default_effort=default if default in levels else '')
+                    seen.add(model)
+            return list(catalog.values())
         for folder in homes:
             try:
                 data = read_json(folder / 'models_cache.json', {})
-                if provider == 'codex' and data.get('models'):
-                    return [dict(id=m['slug'], name=m.get('display_name', m['slug']),
-                                 efforts=[e['effort'] for e in m.get('supported_reasoning_levels', [])],
-                                 default_effort=m.get('default_reasoning_level', 'medium'))
-                            for m in data['models'] if m.get('visibility') != 'hide']
                 if provider == 'grok' and data.get('models'):
                     return [dict(id=k, name=v['info'].get('name', k),
                                  efforts=[e['value'] for e in v['info'].get('reasoning_efforts', [])],
@@ -547,9 +619,6 @@ class Manager:
                             for k, v in data['models'].items() if not v['info'].get('hidden')]
             except (ValueError, KeyError, TypeError):
                 continue
-        if provider == 'claude':
-            return [dict(id=m, name=n, efforts=list(CLAUDE_EFFORTS), default_effort='medium')
-                    for m, n in [('fable', 'Fable'), ('opus', 'Opus'), ('sonnet', 'Sonnet'), ('haiku', 'Haiku')]]
         return []
 
     def read_profile(self, record):
@@ -908,8 +977,8 @@ class Manager:
             raise ValueError('지원하지 않는 effort 값입니다.')
         catalog = self.models(a['provider'], a['home'])
         known = next((m for m in catalog if m['id'] == model), None)
-        if a['provider'] == 'codex' and not self.is_local_codex(a) and catalog and not known:
-            raise ValueError('Codex 모델 목록에 없는 모델입니다. CLI에서 모델 목록을 갱신한 뒤 다시 선택하세요.')
+        # A stale CLI cache is not an access allowlist. New/custom cloud model IDs
+        # are passed through; the provider checks availability when the agent runs.
         if known and effort and not self.is_local_codex(a) and effort not in known['efforts']:
             raise ValueError('선택한 모델이 지원하는 effort를 선택하세요.')
         self.validate_fallback(req)

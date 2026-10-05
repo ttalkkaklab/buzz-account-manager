@@ -30,7 +30,7 @@ SwiftUI 화면과 Python 표준 라이브러리로 만들었으며 별도 서버
 
 Codex 로그인 창은 일회용 코드를 입력란에 표시합니다. **복사 → 로그인 페이지 열기**를 누르고
 페이지의 코드 입력란에 붙여 넣으세요. 로그인 성공·취소·만료 뒤에는 코드를 지웁니다.
-Claude 모델 목록에서 **Fable**을 선택할 수 있습니다. 모델 사용 권한과 크레딧 조건은 해당 계정에 따릅니다.
+Claude 모델 목록에서 **Fable 5.1·Opus 5.5·Sonnet 5.5·Haiku 4.5**와 지원 중인 이전 버전, CLI 별칭을 선택할 수 있습니다. 모델 사용 권한과 크레딧 조건은 해당 계정에 따릅니다.
 
 **구독 계정** 화면을 열면 각 계정의 잔량을 조회합니다. **잔량 새로고침**으로 모두 다시 조회하거나 **이 계정 잔량 새로고침**으로 하나만 조회할 수 있습니다.
 기본 화면에는 Codex 일반 한도와 Claude Code의 5시간·7일 한도만 표시합니다.
@@ -91,8 +91,10 @@ Buzz 신원 키는 Buzz Desktop이 Keychain에서 읽어 실행 프로세스에 
 제거하고 선택한 로그인 경로를 지정합니다. 사용자가 별도 CLI 설정 파일에 직접 추가한
 서드파티 인증이나 실행 옵션까지 모두 검사하는 기능은 아닙니다.
 
-모델 목록은 Codex·Grok의 로컬 캐시를 읽습니다. Claude는 CLI 모델 별칭을 제공합니다.
-직접 입력한 모델의 존재와 실제 지원 여부는 CLI가 실행 시 확인합니다.
+모델 목록은 2026-10-05 기준 [Codex 공식 문서](https://learn.chatgpt.com/docs/models)와 [Claude Code 공식 문서](https://support.claude.com/en/articles/11940350-claude-code-model-configuration)를 반영했습니다.
+Codex는 GPT-6.1 Sol·GPT-6 Astra·GPT-6 Sol·GPT-6 Luna와 이전 세대 목록에 선택한 계정 및 기본 CLI의 로컬 캐시를 합칩니다. Claude는 버전별 모델과 CLI 별칭을 제공합니다. Grok은 로컬 캐시를 읽습니다.
+목록에 없는 신규 모델도 **모델 ID 직접 입력**으로 저장할 수 있으며, 캐시에 없다는 이유로 저장을 막지 않습니다. 모델별 지원 범위에 맞는 effort를 표시합니다.
+실제 모델 이용 권한은 계정과 설치된 CLI 버전에 따릅니다. 로컬 서버는 설치된 모델만 선택할 수 있습니다. 목록 조회는 모델 생성 요청이나 원격 목록 갱신을 수행하지 않습니다.
 Effort는 Buzz 설정과 함께 Codex의 `CODEX_CONFIG`, Claude의 `CLAUDE_CODE_EFFORT_LEVEL`,
 Grok의 `--reasoning-effort`에도 전달합니다.
 

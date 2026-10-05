@@ -28,6 +28,17 @@ import Foundation
         }
         // #142 drag reorder: only the dragged service's slots move, a cancelled drag restores the list, and drops need a live drag.
         let app = AppModel()
+        // Unknown Claude IDs must remain selectable without offering Codex-only Ultra.
+        let modelAccount = Account(id: "models", name: "Models", provider: "claude", home: "/tmp/models",
+                                   builtin: false, ready: true,
+                                   models: [ModelChoice(id: "haiku", name: "Haiku", efforts: [], default_effort: "")])
+        let modelSnapshot = Snapshot(revision: "fixture", agents: [], accounts: [modelAccount], cli_available: [:])
+        for (model, expected) in [("future-claude", ["low", "medium", "high", "xhigh", "max"]), ("haiku", [])] {
+            let agent = Agent(id: "model-test", name: "Model test", provider: "claude", model: model, effort: "", account_id: "models")
+            let editor = AgentEditor(app: app, agent: agent, snapshot: modelSnapshot)
+            assert(editor.efforts == expected, "Effort choices must match the selected model and provider")
+            assert(editor.customModel == (model == "future-claude"), "Saved custom IDs stay editable")
+        }
         func account(_ id: String, _ provider: String) -> Account {
             Account(id: id, name: id, provider: provider, home: "/tmp/" + id, builtin: false, ready: true, models: [])
         }

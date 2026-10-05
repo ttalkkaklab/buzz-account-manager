@@ -26,6 +26,8 @@ Bản tải xuống dành cho Apple Silicon, macOS 14 trở lên. Cần cài Buz
 3. Mở ứng dụng, chọn **Tài khoản đăng ký → Thêm tài khoản** rồi đăng nhập.
 4. Chọn tác nhân, tài khoản, mô hình và mức suy luận, sau đó nhấn **Lưu cài đặt**.
 
+Danh sách mô hình được đối chiếu với [tài liệu Codex](https://learn.chatgpt.com/docs/models) và [tài liệu Claude Code](https://support.claude.com/en/articles/11940350-claude-code-model-configuration) ngày 05/10/2026. Codex kết hợp danh sách này với bộ nhớ đệm CLI của tài khoản đã chọn và tài khoản mặc định. Claude cung cấp các phiên bản mô hình và bí danh CLI. Dùng **Nhập ID mô hình thủ công** cho mô hình mới hoặc chưa có trong danh sách; thiếu mục trong bộ nhớ đệm không còn chặn việc lưu. Mức suy luận tùy theo mô hình. Quyền sử dụng thực tế phụ thuộc vào tài khoản và phiên bản CLI; máy chủ cục bộ vẫn chỉ cho phép mô hình đã cài. Mở danh sách không gửi yêu cầu suy luận hoặc cập nhật danh mục từ xa.
+
 Bản phát hành chỉ có chữ ký ad-hoc, chưa được Apple công chứng. Nếu macOS chặn ứng dụng, kiểm tra trong Cài đặt hệ thống → Quyền riêng tư & Bảo mật hoặc tự biên dịch từ mã nguồn. ZIP không chứa thông tin đăng nhập.
 
 ## Dung lượng và tài khoản dự phòng
