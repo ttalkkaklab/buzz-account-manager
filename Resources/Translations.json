@@ -1,4 +1,8 @@
 {
+  "Codex 모델 목록에 없는 모델입니다. CLI에서 모델 목록을 갱신한 뒤 다시 선택하세요.": {
+    "en": "This model is not in the Codex model catalog. Refresh the catalog in the CLI, then select a model again.",
+    "vi": "Mô hình này không có trong danh mục Codex. Hãy cập nhật danh mục trong CLI rồi chọn lại mô hình."
+  },
   "아직 종료되지 않은 에이전트: ": {
     "en": "Agents still running: ",
     "vi": "Tác nhân vẫn đang chạy: "

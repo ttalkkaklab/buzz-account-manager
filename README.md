@@ -55,6 +55,8 @@ Saving also pins the selected runtime. If the account launcher receives a differ
 
 The displayed service follows Buzz's explicit command override, runtime, and linked definition in that order, with the legacy command as a fallback. An omitted runtime is not assumed to be Codex. A runtime that conflicts with the saved account also raises the disconnected warning. Saving verifies the runtime, command, model, and effort in both the instance and its linked definition.
 
+For subscription Codex accounts with a cached model catalog, saving rejects model IDs absent from that catalog. Refresh the catalog in the CLI if it is outdated. This check does not prove server access: Buzz's live ACP transcript can still report account-specific model errors even when the agent process is online.
+
 If several agents use the same definition, saving gives the selected agent a separate local definition before pinning its account launcher. Built-in definitions are always separated, even when only one agent uses them, so a machine's launcher path is never written into the original built-in definition. Other agents and the original definition stay unchanged. A missing or ambiguous definition, or a team-managed definition that cannot be safely separated, blocks the save with an explanation. The manager rereads the saved instance and its linked definition to verify both launchers. If that check fails, it reports a failure and keeps the backups without overwriting the unexpected store; refresh and inspect the settings before starting Buzz. Legacy agents without a linked definition retain instance-only verification. This check cannot prevent a later external edit from replacing the launcher.
 
 ## Local data and credentials

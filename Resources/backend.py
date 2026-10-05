@@ -906,7 +906,10 @@ class Manager:
         allowed_efforts = CLAUDE_EFFORTS if a['provider'] == 'claude' else ALL_EFFORTS
         if effort and effort not in allowed_efforts:
             raise ValueError('지원하지 않는 effort 값입니다.')
-        known = next((m for m in self.models(a['provider'], a['home']) if m['id'] == model), None)
+        catalog = self.models(a['provider'], a['home'])
+        known = next((m for m in catalog if m['id'] == model), None)
+        if a['provider'] == 'codex' and not self.is_local_codex(a) and catalog and not known:
+            raise ValueError('Codex 모델 목록에 없는 모델입니다. CLI에서 모델 목록을 갱신한 뒤 다시 선택하세요.')
         if known and effort and not self.is_local_codex(a) and effort not in known['efforts']:
             raise ValueError('선택한 모델이 지원하는 effort를 선택하세요.')
         self.validate_fallback(req)
