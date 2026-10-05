@@ -574,6 +574,34 @@ class Manager:
         return (record for record in (read_json(self.store, []) if records is None else records)
                 if record.get('pubkey') and record.get('is_active', True))
 
+    @staticmethod
+    def effective_provider(record, records, profile=None):
+        """Follow Buzz's command override → runtime → linked definition order.
+
+        runtime is optional in Buzz's store. Its absence does not mean Codex.
+        agent_command is only a legacy fallback, not an override of runtime.
+        """
+        command = (record.get('agent_command_override') or '').strip()
+        provider = None
+        if not command:
+            provider = record.get('runtime')
+            if not provider:
+                definition = next((r for r in records if not r.get('pubkey')
+                                   and r.get('slug') == record.get('persona_id')
+                                   and r.get('slug')), {})
+                provider = definition.get('runtime')
+            if not provider:
+                command = (record.get('agent_command') or '').strip()
+        if command:
+            basename = command.replace('\\', '/').rsplit('/', 1)[-1]
+            basename = re.sub(r'\.(exe|cmd|bat)$', '', basename, flags=re.I)
+            provider = {'codex-acp': 'codex', 'claude-agent-acp': 'claude',
+                        'claude-code-acp': 'claude', 'grok': 'grok',
+                        'grok-creator': 'grok'}.get(basename)
+        if provider == 'claude' and (profile or {}).get('active_provider') == 'ollama':
+            return 'ollama'
+        return provider
+
     def snapshot(self):
         if not self.store.exists():
             raise ValueError('Buzz를 설치하고 에이전트를 만든 뒤 새로고침하세요.')
@@ -589,7 +617,9 @@ class Manager:
             linked_profile = self.read_profile(r)
             profile = self.saved_profile(r)
             connection_lost = bool(profile) and not bool(linked_profile)
-            provider = 'ollama' if profile.get('active_provider') == 'ollama' and r.get('runtime') == 'claude' else r.get('runtime') or 'codex'
+            provider = self.effective_provider(r, records, profile)
+            if profile.get('active_provider') and provider != profile['active_provider']:
+                connection_lost = True
             if connection_lost:
                 provider = profile.get('active_provider', provider)
             if provider not in PROVIDERS:
@@ -683,10 +713,12 @@ class Manager:
     def delete_account(self, identity):
         with self.lock():
             self.account(identity)
-            for r in self.active_agent_records():
+            records = read_json(self.store, [])
+            for r in self.active_agent_records(records):
                 profile = self.saved_profile(r)
-                provider = 'ollama' if profile.get('active_provider') == 'ollama' and r.get('runtime') == 'claude' else r.get('runtime') or 'codex'
-                implicit_default = 'default-' + provider if not profile.get('account_ids', {}).get(provider) else None
+                provider = self.effective_provider(r, records, profile)
+                implicit_default = ('default-' + provider if provider and
+                                    not profile.get('account_ids', {}).get(provider) else None)
                 if identity == implicit_default or identity in profile.get('account_ids', {}).values() or any(identity in ids for ids in profile.get('fallback_ids', {}).values()):
                     raise ValueError('에이전트에 연결된 계정입니다. 먼저 다른 계정으로 바꾸세요.')
             data = read_json(self.registry, {'version': 1, 'accounts': []})
@@ -919,18 +951,22 @@ class Manager:
         target['persona_source_version'] = None
         return dedicated
 
-    def verify_account_pin(self, pubkey, linked, launcher):
+    def verify_account_pin(self, pubkey, linked, launcher, expected):
         error = '저장 뒤 계정 연결이 달라졌습니다. Buzz를 시작하기 전에 설정을 새로고침하고 다시 확인하세요.'
         try:
             records = json.loads(self.store.read_bytes())
             instances = [r for r in records if r.get('pubkey') == pubkey]
             valid = (len(instances) == 1 and instances[0].get('acp_command') == str(launcher)
                      and instances[0].get('persona_id') == linked)
+            checked = instances[:]
             if linked:
                 definitions = [r for r in records if not r.get('pubkey') and r.get('slug') == linked]
                 valid = (valid and len(definitions) == 1 and definitions[0].get('acp_command') == str(launcher)
                          and not any(r.get('pubkey') and r.get('pubkey') != pubkey
                                      and r.get('persona_id') == linked for r in records))
+                checked += definitions
+            valid = valid and all(all(r.get(key) == value for key, value in expected.items())
+                                  for r in checked)
         except (OSError, ValueError, TypeError, AttributeError) as exc:
             raise ValueError(error) from exc
         if not valid:
@@ -1048,7 +1084,10 @@ class Manager:
             # Verify fresh disk bytes, not the object we just serialized. A
             # mismatch may be another writer: retain its data and our backups,
             # rather than rolling that newer store back over the other writer.
-            self.verify_account_pin(target['pubkey'], target.get('persona_id'), launcher)
+            self.verify_account_pin(target['pubkey'], target.get('persona_id'), launcher,
+                                    {key: target.get(key) for key in
+                                     ('runtime', 'model', 'effort_level', 'provider',
+                                      'agent_command_override', 'agent_command', 'mcp_command')})
             try:
                 prune_backups(backups.parent, dry_run=BACKUP_PRUNE_DRY_RUN, protected=backups)
             except (OSError, ValueError):

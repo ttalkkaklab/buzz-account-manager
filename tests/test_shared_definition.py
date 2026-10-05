@@ -141,7 +141,8 @@ class SharedDefinitionTests(unittest.TestCase):
 
     def test_readback_detects_instance_definition_relink_and_parse_failures(self):
         original_write = b.atomic_bytes
-        for mode in ('instance', 'definition', 'relink', 'sibling', 'invalid-json', 'missing-store'):
+        for mode in ('instance', 'definition', 'relink', 'sibling', 'invalid-json', 'missing-store',
+                     'model', 'effort_level', 'runtime', 'agent_command_override'):
             with self.subTest(mode=mode):
                 b.write_json(self.manager.store, self.original)
                 foreign_bytes = None
@@ -162,6 +163,8 @@ class SharedDefinitionTests(unittest.TestCase):
                         rows[1]['persona_id'] = 'builtin:fizz'
                     elif mode == 'sibling':
                         rows[2]['persona_id'] = rows[1]['persona_id']
+                    elif mode in ('model', 'effort_level', 'runtime', 'agent_command_override'):
+                        rows[-1][mode] = 'unexpected-external-change'
                     foreign_bytes = b'{' if mode == 'invalid-json' else json.dumps(rows).encode()
                     original_write(path, foreign_bytes, permissions)
                 with patch.object(b, 'atomic_bytes', side_effect=interfere):
