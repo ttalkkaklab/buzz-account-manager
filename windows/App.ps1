@@ -335,7 +335,7 @@ function Fill-Fallbacks {
 }
 function Fill-Efforts {
  $previous=$effort.SelectedItem; $effort.Items.Clear(); [void]$effort.Items.Add((L '모델 기본값'))
- $known=@($assigned.SelectedItem.models | Where-Object id -eq $model.Text) | Select-Object -First 1
+ $known=@($assigned.SelectedItem.models | Where-Object id -eq $model.Text.Trim()) | Select-Object -First 1
  $levels=if ($provider.SelectedItem -eq 'ollama' -or (Is-Server $assigned.SelectedItem)) { @() } elseif ($known) { @($known.efforts) } elseif ($provider.SelectedItem -eq 'claude') { @('low','medium','high','xhigh','max') } else { @('low','medium','high','xhigh','max','ultra') }
  foreach ($level in $levels) { [void]$effort.Items.Add([string]$level) }
  $effort.SelectedIndex=0; if ($previous -and $effort.Items.Contains($previous)) { $effort.SelectedItem=$previous }
@@ -400,7 +400,7 @@ function Fill-Models {
  $model.DropDownStyle=if ($manual.Checked) { 'DropDown' } else { 'DropDownList' }
  $accountState.Text=if ($assigned.SelectedItem.ready) { L '저장된 로그인 정보가 있습니다.' } else { L '계정 설정에서 먼저 로그인하세요.' }
  if (Is-Server $assigned.SelectedItem) { $accountState.Text=[string]$assigned.SelectedItem.endpoint+' · '+(L '도구 호출을 지원하는 로컬 모델을 사용합니다. 모델을 설치한 뒤 도구 모음의 새로고침을 누르세요.') }
- $modelHint.Text=if ($provider.SelectedItem -eq 'ollama') { if ($model.Items.Count) { L 'Ollama 설치 모델' } else { L '사용할 로컬 모델이 없습니다. Ollama 서버에 도구 호출을 지원하는 모델을 설치하고 새로고침하세요.' } } elseif ($provider.SelectedItem -eq 'claude') { L 'CLI 모델 별칭' } else { L '로컬 모델 캐시' }
+ $modelHint.Text=if ($provider.SelectedItem -eq 'ollama') { if ($model.Items.Count) { L 'Ollama 설치 모델' } else { L '사용할 로컬 모델이 없습니다. Ollama 서버에 도구 호출을 지원하는 모델을 설치하고 새로고침하세요.' } } elseif (Is-Server $assigned.SelectedItem) { L '서버에 설치된 로컬 모델을 선택하세요.' } elseif ($provider.SelectedItem -eq 'claude') { L '모델 버전 · CLI 별칭' } elseif ($provider.SelectedItem -eq 'codex') { L '공식 모델 + CLI 캐시' } else { L '로컬 모델 캐시' }
  $effortHint.Text=if ($provider.SelectedItem -eq 'ollama') { L 'Ollama는 모델의 기본 추론 설정을 사용합니다. 구독 계정의 사용량은 차감하지 않습니다.' } elseif (Is-Server $assigned.SelectedItem) { L '서버에 설치된 로컬 모델을 선택하세요.' } else { L '높을수록 더 오래 생각하며 구독 사용량이 늘 수 있습니다. 지원 범위는 모델마다 다릅니다.' }
  $fallbackCard.Visible=($provider.SelectedItem -in @('codex','claude') -and -not (Is-Server $assigned.SelectedItem))
  $automatic.Checked=$false; Fill-Fallbacks; Fill-Efforts

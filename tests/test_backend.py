@@ -41,13 +41,22 @@ class ManagerTests(unittest.TestCase):
     def request(self):
         return dict(agent_id=self.pk, account_id='default-codex', provider='codex', model='test-model', effort='high',
                     revision=b.revision(self.manager.store.read_bytes()))
-    def test_unknown_codex_model_is_rejected_before_any_settings_write(self):
-        req = dict(self.request(), model='unsupported-model')
-        before = self.manager.store.read_bytes()
-        with self.assertRaisesRegex(ValueError, 'Codex 모델 목록에 없는 모델'):
-            self.manager.apply(req)
-        self.assertEqual(self.manager.store.read_bytes(), before)
-        self.assertFalse((self.manager.root / 'backups').exists())
+    def test_new_codex_model_saves_despite_stale_cache_and_reaches_runtime(self):
+        req = dict(self.request(), model='future-codex-model')
+        self.manager.apply(req)
+        saved = b.read_json(self.manager.store)
+        instance = next(r for r in saved if r.get('pubkey') == self.pk)
+        definition = next(r for r in saved if r.get('slug') == instance['persona_id'])
+        for record in (instance, definition):
+            self.assertEqual(record['model'], req['model'])
+            self.assertEqual(record['effort_level'], req['effort'])
+        env = dict(BUZZ_PRIVATE_KEY='test-identity', BUZZ_ACP_AGENT_COMMAND='codex-acp', BUZZ_ACP_MODEL=instance['model'],
+                   BUZZ_ACP_EFFORT_LEVEL=instance['effort_level'])
+        with patch.dict(os.environ, env, clear=True), capture_launch(b) as execute:
+            launch(self, self.manager, 'agent-' + self.pk, [])
+            config = json.loads(execute.call_args.args[2]['CODEX_CONFIG'])
+            self.assertEqual(config['model'], req['model'])
+            self.assertEqual(config['model_reasoning_effort'], req['effort'])
     def test_custom_account_hide_restore_preserves_metadata_and_credentials(self):
         for provider in ('codex', 'claude', 'grok', 'ollama'):
             with self.subTest(provider=provider):
@@ -341,8 +350,8 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.manager.validate(req)
     def test_claude_efforts_save_and_reach_runtime(self):
         levels = ['low', 'medium', 'high', 'xhigh', 'max']
-        for model in self.manager.models('claude'):
-            self.assertEqual(model['efforts'], levels)
+        opus = next(m for m in self.manager.models('claude') if m['id'] == 'opus')
+        self.assertEqual(opus['efforts'], levels)
         for level in levels:
             with self.subTest(effort=level):
                 req = self.request()
